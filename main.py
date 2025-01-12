@@ -1,0 +1,55 @@
+import os
+import numpy as np
+import random
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from utils.utils import load_configs
+from utils.utils import initialize_logging
+import wandb
+import argparse
+from loader.Dataloader import load_data_from_npy, load_split_data
+from torch.utils.data import DataLoader
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='CFNO')
+    parser.add_argument('--config', type=str, default='./configs/configs.yaml',
+                        help='Path to the config file')
+
+    return parser.parse_args()
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    set_seed(42)
+    # Load configs, initialize logging, and set seed
+    configs = load_configs(file_path=args.config)
+    seed = configs.get('seed', 42)
+    set_seed(seed)
+    logger = initialize_logging(file_dir="./logs")
+    logger.info(f"Loaded configs from: {args.config}")
+    logger.info(f"Seed: {seed}")
+    logger.info(f"Configs: {configs}")
+
+
+    if configs.get('use_wandb', False):
+        wandb.init(project="your_project_name", config=configs)
+        config = wandb.config
+    else:
+        config = configs
+
+    # load and split data
+    train_dataset, test_dataset = load_split_data(config)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False)
+    logger.info(f"Loaded data from: {config['data_dir']}")
+
+    # Define the model
+    print(train_dataset)
+    
