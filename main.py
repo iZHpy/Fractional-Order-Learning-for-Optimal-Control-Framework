@@ -11,6 +11,8 @@ import wandb
 import argparse
 from loader.Dataloader import load_data_from_npy, load_split_data
 from torch.utils.data import DataLoader
+from layer.models import CFNO
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='CFNO')
@@ -39,7 +41,7 @@ if __name__ == "__main__":
 
 
     if configs.get('use_wandb', False):
-        wandb.init(project="your_project_name", config=configs)
+        wandb.init(project="CFNO", config=configs)
         config = wandb.config
     else:
         config = configs
@@ -51,5 +53,13 @@ if __name__ == "__main__":
     logger.info(f"Loaded data from: {config['data_dir']}")
 
     # Define the model
-    print(train_dataset)
-    
+    m = train_dataset.m
+    n = train_dataset.n
+    T = train_dataset.T
+
+    model = CFNO(n, m, T, config, logger)
+    logger.info(f"Model: {model}")
+
+    for batch in train_loader:
+        A, B , alpha = model(batch, logger)
+        break

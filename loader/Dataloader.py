@@ -16,10 +16,21 @@ class FractionalOrderDataset(Dataset):
             'A': torch.tensor(A, dtype=torch.float32),
             'B': torch.tensor(B, dtype=torch.float32)
         }
+        self.m = inputs.shape[2]
+        self.n = x_init.shape[2]
+        self.T = inputs.shape[1]
         self.config = config
+        self.len = inputs.shape[0]
+        self.data['A'] = self._duplicate_and_stack(self.data['A'], self.len)
+        self.data['B'] = self._duplicate_and_stack(self.data['B'], self.len)
+        self.data['alphas'] = self._duplicate_and_stack(self.data['alphas'], self.len)
+
+    def _duplicate_and_stack(self, tensor, num_copies):
+        return torch.stack([tensor] * num_copies, dim=0)
+
 
     def __len__(self):
-        return self.data['input_u'].shape[0]
+        return self.len
 
 
     def __getitem__(self, idx):

@@ -37,10 +37,13 @@ identification_model_params:
   num_blocks: 2
   block_layers: [2, 2]
   hidden_size: [[64, 128],[128, 128]]
-  dropout: 0.2
+  dropout_rate: 0.2
   activation: 'ReLU'
-  norm_layer: 'BatchNorm'
+  norm_type: 'BatchNorm'
   loss: 'MSE'
+  loss_params:
+    reduction: 'sum'
   residual: False
+  
   
 

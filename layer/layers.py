@@ -51,13 +51,13 @@ class ResidualMLPBlock(nn.Module):
             layers.append(linear_layer)
 
             # 2) Activation
-            if activation == 'relu':
+            if activation == 'ReLU':
                 layers.append(nn.ReLU())
-            elif activation == 'gelu':
+            elif activation == 'GELU':
                 layers.append(nn.GELU())
-            elif activation == 'tanh':
+            elif activation == 'Tanh':
                 layers.append(nn.Tanh())
-            elif activation == 'sigmoid':
+            elif activation == 'Sigmoid':
                 layers.append(nn.Sigmoid())
             else:
                 raise ValueError(f"Unknown activation: {activation}")
