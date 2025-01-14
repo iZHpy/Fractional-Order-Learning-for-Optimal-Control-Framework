@@ -44,6 +44,38 @@ identification_model_params:
   loss_params:
     reduction: 'sum'
   residual: False
+
+# AParam_model: 'MLP'
+# AParam_model_params:
+#   num_blocks: 2
+#   block_layers: [2, 2]
+#   hidden_size: [[64, 128],[128, 128]]
+#   output_size: 5
+#   dropout_rate: 0.2
+#   activation: 'ReLU'
+#   norm_type: 'BatchNorm'
+#   residual: False
+#   use_U: False
+
+AParam_model: 'Embedding'
+AParam_model_params:
+  hidden_size: 64
+  output_size: 5
+  dropout_rate: 0.2
+  activation: 'ReLU'
+  norm_type: 'LayerNorm'
+  residual: False
+  use_U: False
+
+GParam_model: 'GRU' #LSTM, GRU, Transformer
+GParam_model_params:
+  hidden_size: 64
+  num_layers: 2
+  dropout_rate: 0.2
+  activation: 'ReLU'
+  norm_type: 'BatchNorm'
+  seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
+  bidirectional: False
   
   
 

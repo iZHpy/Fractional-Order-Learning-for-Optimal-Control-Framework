@@ -5,10 +5,10 @@ from sklearn.model_selection import train_test_split
 
 
 class FractionalOrderDataset(Dataset):
-    def __init__(self, alphas, inputs, x_init, LQR_Q, LQR_R, optimal_controls, A, B, config):
+    def __init__(self, alphas, input_u, x_init, LQR_Q, LQR_R, optimal_controls, A, B, config):
         self.data = {
             'alphas': torch.tensor(alphas, dtype=torch.float32),
-            'input_u': torch.tensor(inputs, dtype=torch.float32),
+            'input_u': torch.tensor(input_u, dtype=torch.float32),
             'input_x': torch.tensor(x_init if config['x_mode'] == 'All' else x_init[:, :1], dtype=torch.float32),
             'LQR_Q': torch.tensor(LQR_Q, dtype=torch.float32),
             'LQR_R': torch.tensor(LQR_R, dtype=torch.float32),
@@ -16,11 +16,11 @@ class FractionalOrderDataset(Dataset):
             'A': torch.tensor(A, dtype=torch.float32),
             'B': torch.tensor(B, dtype=torch.float32)
         }
-        self.m = inputs.shape[2]
+        self.m = input_u.shape[2]
         self.n = x_init.shape[2]
-        self.T = inputs.shape[1]
+        self.T = input_u.shape[1]
         self.config = config
-        self.len = inputs.shape[0]
+        self.len = input_u.shape[0]
         self.data['A'] = self._duplicate_and_stack(self.data['A'], self.len)
         self.data['B'] = self._duplicate_and_stack(self.data['B'], self.len)
         self.data['alphas'] = self._duplicate_and_stack(self.data['alphas'], self.len)
@@ -42,7 +42,7 @@ class FractionalOrderDataset(Dataset):
     
 def load_data_from_npy(data_dir):
     alphas = np.load(f'{data_dir}/fractional_orders_alpha.npy')
-    inputs = np.load(f'{data_dir}/fractional_system_inputs.npy')
+    input_u = np.load(f'{data_dir}/fractional_system_inputs.npy')
     x_init = np.load(f'{data_dir}/fractional_system_trajectories.npy')
     LQR_Q = np.load(f'{data_dir}/LQR_Q.npy')
     LQR_R = np.load(f'{data_dir}/LQR_R.npy')
@@ -50,7 +50,7 @@ def load_data_from_npy(data_dir):
     A = np.load(f'{data_dir}/system_matrix_A.npy')
     B = np.load(f'{data_dir}/system_matrix_B.npy')
     
-    return alphas, inputs, x_init, LQR_Q, LQR_R, optimal_controls, A, B
+    return alphas, input_u, x_init, LQR_Q, LQR_R, optimal_controls, A, B
 
 # Split data into training and testing sets
 def load_split_data(config):
