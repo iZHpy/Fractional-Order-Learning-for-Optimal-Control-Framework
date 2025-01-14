@@ -1,6 +1,8 @@
 import yaml
 import logging
 from datetime import datetime
+import torch
+import torch.optim as optim
 
 def load_configs(file_path = None):
     with open(file_path, 'r') as stream:
@@ -23,3 +25,56 @@ def initialize_logging(file_dir = None):
                         ])
     logger = logging.getLogger(__name__)
     return logger
+
+def get_scheduler(optimizer, config, logger):
+    scheduler_type = config.get('scheduler', None)
+    scheduler_mode = config['scheduler_params'].get('mode', None)
+    step_size = config['scheduler_params'].get('step_size', None)
+    milestones = config['scheduler_params'].get('milestones', None)
+    factor = config['scheduler_params'].get('factor', None)
+    patience = config['scheduler_params'].get('patience', None)
+    threshold = config['scheduler_params'].get('threshold', None)
+    threshold_mode = config['scheduler_params'].get('threshold_mode', None)
+    cooldown = config['scheduler_params'].get('cooldown', None)
+    min_lr = config['scheduler_params'].get('min_lr', None)
+    eps = config['scheduler_params'].get('eps', None)
+    gamma = config['scheduler_params'].get('gamma', None)
+    T_max = config['scheduler_params'].get('T_max', None)
+    eta_min = config['scheduler_params'].get('eta_min', None)
+    T_0 = config['scheduler_params'].get('T_0', None)
+    T_mult = config['scheduler_params'].get('T_mult', None)
+
+
+    if scheduler_type == 'ReduceLROnPlateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=scheduler_mode, factor=factor, patience=patience, threshold=threshold, threshold_mode=threshold_mode, cooldown=cooldown, min_lr=min_lr, eps=eps)
+    elif scheduler_type == 'StepLR':
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+    elif scheduler_type == 'MultiStepLR':
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
+    elif scheduler_type == 'ExponentialLR':
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+    elif scheduler_type == 'CosineAnnealingLR':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
+    elif scheduler_type == 'CosineAnnealingWarmRestarts':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min)
+    else:
+        scheduler = None
+    return scheduler
+
+def get_optimizer(model, config, logger):
+    lr = config['optimizer_params']['lr']
+    weight_decay = config['optimizer_params']['weight_decay']
+    optimizer_type = config['optimizer']
+    if optimizer_type == 'Adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif optimizer_type == 'SGD':
+        optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif optimizer_type == 'RMSprop':
+        optimizer = optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif optimizer_type == 'Adagrad':
+        optimizer = optim.Adagrad(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif optimizer_type == 'AdamW':
+        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    else:
+        logger.error(f"Optimizer {optimizer_type} not supported")
+        raise ValueError(f"Optimizer {optimizer_type} not supported")

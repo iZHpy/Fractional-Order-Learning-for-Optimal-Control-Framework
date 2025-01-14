@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from utils.utils import load_configs
-from utils.utils import initialize_logging
+from utils.utils import load_configs, initialize_logging, get_scheduler, get_optimizer
 import wandb
 import argparse
 from loader.Dataloader import load_data_from_npy, load_split_data
@@ -25,6 +24,9 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+
 
 
 if __name__ == "__main__":
@@ -60,6 +62,10 @@ if __name__ == "__main__":
     model = CFNO(n, m, T, config, logger)
     logger.info(f"Model: {model}")
 
-    for batch in train_loader:
-        A, B , alpha = model(batch, logger)
-        break
+    optimizer = get_optimizer(model, config, logger)
+    scheduler = get_scheduler(optimizer, config, logger)
+    logger.info(f"Optimizer: {optimizer}")
+    logger.info(f"Scheduler: {scheduler}")
+    
+    # Train the model
+    
