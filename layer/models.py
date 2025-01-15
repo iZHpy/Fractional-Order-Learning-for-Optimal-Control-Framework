@@ -235,6 +235,71 @@ class GParamModel(nn.Module):
         """
         return self.seq_model(x)
 
+
+class FinalTrans(nn.Module):
+    def __init__(self, n, m, T, 
+                 config, logger, *args, **kwargs):
+        super(FinalTrans, self).__init__()
+        self.n = n
+        self.m = m
+        self.T = T
+        self.cfg = config
+        self.input_dim = n
+        num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual = self._get_config(config)
+        self.input_proj = nn.Linear(self.input_dim, block_dims[0][0])
+        blocks = []
+        prev_dim = block_dims[0][0]
+        for i in range(num_blocks):
+            block = ResidualMLPBlock(
+                in_dim=prev_dim,
+                hidden_dims=block_dims[i],
+                num_layers=block_layers[i],
+                dropout_rate=dropout_rate,
+                norm_type=norm_type,
+                activation=activation,
+                use_residual=use_residual  
+            )
+            blocks.append(block)
+            prev_dim = block_dims[i][-1]
+        self.blocks = nn.Sequential(*blocks)
+        self.output_proj = nn.Linear(prev_dim, self.n)
+    
+    
+    def _get_config(self, config):
+        num_blocks = config['FINAL_model_params'].get('num_blocks', 2)
+        block_dims = config['FINAL_model_params'].get('hidden_size', [64, 64])
+        block_layers = config['FINAL_model_params'].get('block_layers', [2, 2])
+        dropout_rate = config['FINAL_model_params'].get('dropout_rate', 0.0)
+        norm_type = config['FINAL_model_params'].get('norm_type', None)
+        activation = config['FINAL_model_params'].get('activation', 'ReLU')
+        use_residual = config['FINAL_model_params'].get('use_residual', False)
+        return num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual
+        
+    def forward(self, B, G, LQR_Q, LQR_R, x0):
+        """
+        B: (batch_size, n*m)
+        G: (batch_size, T, n*n)
+        LQR_Q: (batch_size, n*n)
+        LQR_R: (batch_size, m*m)
+        x0: (batch_size, n)
+        return: (batch_size, T, n)
+        """
+        batch_size = B.size(0)
+        B = B.view(batch_size, self.n, self.m)
+        # calculate the inverse of LQR_R
+        LQR_R_inv = torch.inverse(LQR_R)
+        # calculate the optimal trajectory
+        LQR_R_inv_B = torch.matmul(B, torch.matmul(LQR_R_inv, B.permute(0,2,1)))  # (batch_size, m*n)
+        x = torch.matmul(G.view(batch_size, self.T, self.n, self.n), LQR_R_inv_B.unsqueeze(1).repeat(1, self.T, 1, 1))  # (batch_size, T, n, n)
+        x = torch.matmul(torch.matmul(LQR_Q.unsqueeze(1).repeat(1, self.T, 1, 1), x), x0.unsqueeze(1).repeat(1, self.T, 1, 1).transpose(-1,-2)).squeeze(3)    # (batch_size, T, n)
+        print(f"x: {x.shape}")
+        x = self.input_proj(x)  # (batch_size, T, hidden_dim)
+        print(f"x: {x.shape}")
+        x = self.blocks(x)  # (batch_size, T, hidden_dim)
+        x = self.output_proj(x)
+        return x
+        
+
 # Define the CFNO model 
 class CFNO(nn.Module):
     def __init__(self,
@@ -265,6 +330,8 @@ class CFNO(nn.Module):
 
         input_dim = config['AParam_model_params'].get('output_size', n)
         self.GParamModel = GParamModel(n, m, T, input_dim, config, logger)
+        self.FinalTrans = FinalTrans(n, m, T, config, logger)
+        
         
 
     def _get_batch(self, batch):
@@ -304,11 +371,18 @@ class CFNO(nn.Module):
 
     def forward(self, batch, logger):
         x0, U, A_true, B_true, alpha_true, LQR_Q, LAR_R, optimal_controls = self._get_batch(batch)
+        print('x0: ', x0.shape)
+        print('LQR_Q: ', LQR_Q.shape)
+        print('LAR_R: ', LAR_R.shape)
+        print('optimal_controls: ', optimal_controls.shape)
         A, B, alpha = self.param_regressor(x0, U)
+        # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
         print(f"regress_loss: {regress_loss}")
         A_emb = self.AParmaModel(U, A, alpha)
         print(f"T_emb: {A_emb.shape}")
         G = self.GParamModel(A_emb)
         print(f"G: {G.shape}")
+        FNO_x = self.FinalTrans(B, G, LQR_Q, LAR_R, x0)
+        print(f"FNO_x: {FNO_x.shape}")
         return A, B, alpha

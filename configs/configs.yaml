@@ -67,7 +67,7 @@ AParam_model_params:
   residual: False
   use_U: False
 
-GParam_model: 'GRU' #LSTM, GRU, Transformer
+GParam_model: 'GRU' #LSTM, GRU, RNN, Transformer
 GParam_model_params:
   hidden_size: 64
   num_layers: 2
@@ -76,6 +76,15 @@ GParam_model_params:
   norm_type: 'BatchNorm'
   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
   bidirectional: False
+
+FINAL_model_params:
+  num_blocks: 1
+  block_layers: [2]
+  hidden_size: [[64, 64]]
+  dropout_rate: 0.2
+  activation: 'ReLU'
+  norm_type: 'LayerNorm'
+  residual: False
   
   
 

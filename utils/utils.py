@@ -78,3 +78,4 @@ def get_optimizer(model, config, logger):
     else:
         logger.error(f"Optimizer {optimizer_type} not supported")
         raise ValueError(f"Optimizer {optimizer_type} not supported")
+    return optimizer

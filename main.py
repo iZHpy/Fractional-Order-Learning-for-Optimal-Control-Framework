@@ -68,4 +68,7 @@ if __name__ == "__main__":
     logger.info(f"Scheduler: {scheduler}")
     
     # Train the model
+    for batch in train_loader:
+        optimizer.zero_grad()
+        model(batch, logger)
     
