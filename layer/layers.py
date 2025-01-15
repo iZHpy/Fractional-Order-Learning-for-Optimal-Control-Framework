@@ -111,7 +111,7 @@ class LSTMGenerator(nn.Module):
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
-            batch_first=True,  # input_shape (batch_size, T, input_dim)
+            batch_first=False,  # input_shape (batch_size, T, input_dim)
             bidirectional=config['bidirectional']
         )
         # Fully connected layer
@@ -119,7 +119,7 @@ class LSTMGenerator(nn.Module):
         self.act = [nn.ReLU(), nn.Tanh(), nn.GELU(), nn.Sigmoid()][['ReLU', 'Tanh', 'GELU', 'Sigmoid'].index(activation)]
         self.dropout = nn.Dropout(dropout_rate)
         self.norm_type = norm_type
-        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)]
+        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
 
     def forward(self, x):
         """
@@ -128,14 +128,14 @@ class LSTMGenerator(nn.Module):
         """
         # LSTM forward
         output, (h_n, c_n) = self.lstm(x)  
-        # output: (batch_size, T, hidden_dim)
+        # output: (T, batch_size, hidden_dim)
         # h_n: (num_layers, batch_size, hidden_dim)
         # c_n: (num_layers, batch_size, hidden_dim)
         
-        # => (batch_size, T, output_dim)
+        # => (T, batch_size, output_dim)
         y = self.dropout(self.act(self.fc(output)))
         if self.norm_type == 'BatchNorm':
-            y = self.norm(y.transpose(1,2)).transpose(1,2)
+            y = self.norm(y.permute(1, 2, 0)).permute(2, 0, 1)
         elif self.norm_type == 'LayerNorm':
             y = self.norm(y)
         
@@ -146,9 +146,9 @@ class RNNGenerator(nn.Module):
                  dropout_rate=0.1, norm_type='None',activation='ReLU', config=None):
         """
         input_dim: input_dim of each time step
-        hidden_dim: hidden_dim of LSTM
+        hidden_dim: hidden_dim of RNN
         output_dim: output_dim (n*n)
-        num_layers: number of layers of LSTM
+        num_layers: number of layers of RNN
         """
         super(RNNGenerator, self).__init__()
         self.hidden_dim = hidden_dim
@@ -159,7 +159,7 @@ class RNNGenerator(nn.Module):
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
-            batch_first=True,  # input_shape (batch_size, T, input_dim)
+            batch_first=False,  # input_shape (T, batch_size, input_dim)
             bidirectional=config['bidirectional']
         )
         # Fully connected layer
@@ -167,23 +167,24 @@ class RNNGenerator(nn.Module):
         self.act = [nn.ReLU(), nn.Tanh(), nn.GELU(), nn.Sigmoid()][['ReLU', 'Tanh', 'GELU', 'Sigmoid'].index(activation)]
         self.dropout = nn.Dropout(dropout_rate)
         self.norm_type = norm_type
-        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)]
-        
+        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+
     def forward(self, x):
         """
-        x: (batch_size, T, input_dim)
-        return: (batch_size, T, output_dim)
+        x: (T, batch_size, input_dim)
+        return: (T, batch_size, output_dim)
         """
-        # LSTM forward
+        # RNN forward
         output, h_n = self.rnn(x)  
-        # output: (batch_size, T, hidden_dim)
+        # output: (T, batch_size, hidden_dim)
         # h_n: (num_layers, batch_size, hidden_dim)
+        # c_n: (num_layers, batch_size, hidden_dim)
         
-        # => (batch_size, T, output_dim)
+        # => (T, batch_size, output_dim)
         y = self.fc(output)
         y = self.dropout(self.act(y))
         if self.norm_type == 'BatchNorm':
-            y = self.norm(y.transpose(1,2)).transpose(1,2)
+            y = self.norm(y.permute(1, 2, 0)).permute(2, 0, 1)
         elif self.norm_type == 'LayerNorm':
             y = self.norm(y)
         
@@ -194,9 +195,9 @@ class GRUGenerator(nn.Module):
                  dropout_rate=0.1, norm_type='None',activation='ReLU', config=None):
         """
         input_dim: input_dim of each time step
-        hidden_dim: hidden_dim of LSTM
+        hidden_dim: hidden_dim of GRU
         output_dim: output_dim (n*n)
-        num_layers: number of layers of LSTM
+        num_layers: number of layers of GRU
         """
         super(GRUGenerator, self).__init__()
         self.hidden_dim = hidden_dim
@@ -207,7 +208,7 @@ class GRUGenerator(nn.Module):
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
-            batch_first=True,  # input_shape (batch_size, T, input_dim)
+            batch_first=False,  # input_shape (T, batch_size, input_dim)
             bidirectional=config['bidirectional']
         )
         # Fully connected layer
@@ -215,23 +216,23 @@ class GRUGenerator(nn.Module):
         self.act = [nn.ReLU(), nn.Tanh(), nn.GELU(), nn.Sigmoid()][['ReLU', 'Tanh', 'GELU', 'Sigmoid'].index(activation)]
         self.dropout = nn.Dropout(dropout_rate)
         self.norm_type = norm_type
-        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)]
+        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
         
     def forward(self, x):
         """
-        x: (batch_size, T, input_dim)
-        return: (batch_size, T, output_dim)
+        x: (T, batch_size, input_dim)
+        return: (T, batch_size, output_dim)
         """
-        # LSTM forward
+        # GRU forward
         output, h_n = self.gru(x)  
-        # output: (batch_size, T, hidden_dim)
+        # output: (T, batch_size, hidden_dim)
         # h_n: (num_layers, batch_size, hidden_dim)
         
-        # => (batch_size, T, output_dim)
+        # => (T, batch_size, output_dim)
         y = self.fc(output)
         y = self.dropout(self.act(y))
         if self.norm_type == 'BatchNorm':
-            y = self.norm(y.transpose(1,2)).transpose(1,2)
+            y = self.norm(y.permute(1, 2, 0)).permute(2, 0, 1)
         elif self.norm_type == 'LayerNorm':
             y = self.norm(y)
 

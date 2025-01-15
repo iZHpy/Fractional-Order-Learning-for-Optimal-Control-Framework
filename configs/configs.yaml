@@ -63,7 +63,7 @@ AParam_model_params:
   output_size: 5
   dropout_rate: 0.2
   activation: 'ReLU'
-  norm_type: 'LayerNorm'
+  norm_type: 'BatchNorm'
   residual: False
   use_U: False
 

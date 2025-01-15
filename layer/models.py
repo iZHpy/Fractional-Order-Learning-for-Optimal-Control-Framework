@@ -96,7 +96,6 @@ class A_ParamEmbedding(nn.Module):
         self.cfg = config
         hidden_size, dropout_rate, norm_type, activation, use_residual, use_U = self._get_config(config)
         self.output_size = config['AParam_model_params'].get('output_size', n)
-        self.norm_type = norm_type
 
         self.Embedding = nn.Embedding(T, hidden_size//2)
         self.fc1 = nn.Linear(n*2, hidden_size)
@@ -104,7 +103,9 @@ class A_ParamEmbedding(nn.Module):
         self.fc3 = nn.Linear(hidden_size, self.output_size)
         self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
         self.dropout = nn.Dropout(dropout_rate)
-        self.norm = [nn.BatchNorm1d(self.output_size), nn.LayerNorm(self.output_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else None
+        self.norm_type = norm_type
+        self.norm = [nn.BatchNorm1d(self.output_size), nn.LayerNorm(self.output_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+
 
     def forward(self, U, A_flat, alpha):
         # calculate the eigenvalues of A
@@ -120,9 +121,9 @@ class A_ParamEmbedding(nn.Module):
         T_emb = self.Embedding(Ts) # (batch_size, T-1, hidden_size//2)
         T_emb = torch.cat([T_emb, alpha_emb], dim=2)  # (batch_size, T-1, hidden_size)
         T_emb = torch.cat([A0_emb.unsqueeze(1), T_emb], dim=1)  # (batch_size, T, hidden_size)
-        emb = self.dropout(self.act(self.fc3(T_emb)))  # (batch_size, T, output_size)
+        emb = self.dropout(self.act(self.fc3(T_emb))).transpose(0, 1)  # (T, batch_size, output_size)
         if self.norm_type == 'BatchNorm':
-            emb = self.norm(emb.transpose(1, 2)).transpose(1, 2)
+            emb = self.norm(emb.permute(1, 2, 0)).permute(2, 0, 1)
         elif self.norm_type == 'LayerNorm':
             emb = self.norm(emb)
         return emb
@@ -193,7 +194,7 @@ class A_ParamMLP(nn.Module):
         # reshape (batch_size, T, n)
         x = x.view(batch_size, -1, self.output_size)  
 
-        return x
+        return x.transpose(0, 1)  # (T, batch_size, n)
 
 
 class GParamModel(nn.Module):
@@ -230,8 +231,8 @@ class GParamModel(nn.Module):
 
     def forward(self, x):
         """
-        x: (batch_size, T, input_dim)
-        return: (batch_size, T, n*n)
+        x: (T, batch_size, input_dim)
+        return: (T, batch_size, n*n)
         """
         return self.seq_model(x)
 
@@ -278,7 +279,7 @@ class FinalTrans(nn.Module):
     def forward(self, B, G, LQR_Q, LQR_R, x0):
         """
         B: (batch_size, n*m)
-        G: (batch_size, T, n*n)
+        G: (T, batch_size, n*n)
         LQR_Q: (batch_size, n*n)
         LQR_R: (batch_size, m*m)
         x0: (batch_size, n)
@@ -290,12 +291,12 @@ class FinalTrans(nn.Module):
         LQR_R_inv = torch.inverse(LQR_R)
         # calculate the optimal trajectory
         LQR_R_inv_B = torch.matmul(B, torch.matmul(LQR_R_inv, B.permute(0,2,1)))  # (batch_size, m*n)
-        x = torch.matmul(G.view(batch_size, self.T, self.n, self.n), LQR_R_inv_B.unsqueeze(1).repeat(1, self.T, 1, 1))  # (batch_size, T, n, n)
-        x = torch.matmul(torch.matmul(LQR_Q.unsqueeze(1).repeat(1, self.T, 1, 1), x), x0.unsqueeze(1).repeat(1, self.T, 1, 1).transpose(-1,-2)).squeeze(3)    # (batch_size, T, n)
+        x = torch.matmul(G.view(self.T, batch_size, self.n, self.n), LQR_R_inv_B.unsqueeze(0).repeat(self.T, 1, 1, 1))  # (T, batch_size, n, n)
+        x = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), x), x0.unsqueeze(0).repeat(self.T, 1, 1, 1).transpose(-1,-2)).squeeze(3)    # (T, batch_size, n)
         print(f"x: {x.shape}")
-        x = self.input_proj(x)  # (batch_size, T, hidden_dim)
+        x = self.input_proj(x)  # (T, batch_size, hidden_dim)
         print(f"x: {x.shape}")
-        x = self.blocks(x)  # (batch_size, T, hidden_dim)
+        x = self.blocks(x)  # (T, batch_size, hidden_dim)
         x = self.output_proj(x)
         return x
         
@@ -379,9 +380,9 @@ class CFNO(nn.Module):
         # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
         print(f"regress_loss: {regress_loss}")
-        A_emb = self.AParmaModel(U, A, alpha)
+        A_emb = self.AParmaModel(U, A, alpha)  # (T, batch_size, n)
         print(f"T_emb: {A_emb.shape}")
-        G = self.GParamModel(A_emb)
+        G = self.GParamModel(A_emb) # (T, batch_size, n*n)
         print(f"G: {G.shape}")
         FNO_x = self.FinalTrans(B, G, LQR_Q, LAR_R, x0)
         print(f"FNO_x: {FNO_x.shape}")
