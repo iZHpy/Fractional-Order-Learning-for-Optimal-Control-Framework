@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from neuralop.models import FNO2d
 from layer.layers import ResidualMLPBlock
 from layer.layers import LSTMGenerator, RNNGenerator, GRUGenerator
 
@@ -332,8 +332,14 @@ class CFNO(nn.Module):
         input_dim = config['AParam_model_params'].get('output_size', n)
         self.GParamModel = GParamModel(n, m, T, input_dim, config, logger)
         self.FinalTrans = FinalTrans(n, m, T, config, logger)
-        
-        
+        self.FNO = FNO2d(
+            in_channels=1,
+            out_channels=1,
+            n_modes_height=16,
+            n_modes_width=16,
+            hidden_channels=64
+        )
+
 
     def _get_batch(self, batch):
         x0 = batch['input_x']
@@ -386,4 +392,7 @@ class CFNO(nn.Module):
         print(f"G: {G.shape}")
         FNO_x = self.FinalTrans(B, G, LQR_Q, LAR_R, x0)
         print(f"FNO_x: {FNO_x.shape}")
+
+        out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)
+        print(f"u: {out.shape}")
         return A, B, alpha
