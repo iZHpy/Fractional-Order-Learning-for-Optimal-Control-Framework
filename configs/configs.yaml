@@ -1,17 +1,29 @@
 seed: 42
-learning_rate: 0.001
+device: 'cuda:0'
 batch_size: 32
-num_epochs: 100
+epochs: 100
 wandb: False
 data_dir: './data/'
 x_mode: Initial
 batch_size: 32
 test_size: 0.2
 num_epochs: 100
+
+loss_params:
+  regression_loss: 
+    loss: 'MSE'
+    reduction: 'sum'
+  label_loss:
+    loss: 'MSE'
+    weight: 0.8
+  reduction: 'mean'
+  
+
 optimizer: 'Adam'
 optimizer_params:
   lr: 0.001
   weight_decay: 0.0
+
 
 scheduler: 'ReduceLROnPlateau'
 scheduler_params:
@@ -32,7 +44,7 @@ early_stopping_params:
   monitor: 'val_loss'
   verbose: False
 
-identification_model: 'MLP'
+identification_model: 'MLP' # RNN LSTM GRU
 identification_model_params:
   num_blocks: 2
   block_layers: [2, 2]
@@ -40,9 +52,6 @@ identification_model_params:
   dropout_rate: 0.2
   activation: 'ReLU'
   norm_type: 'BatchNorm'
-  loss: 'MSE'
-  loss_params:
-    reduction: 'sum'
   residual: False
 
 # AParam_model: 'MLP'

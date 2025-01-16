@@ -52,13 +52,12 @@ def get_scheduler(optimizer, config, logger):
     threshold_mode = config['scheduler_params'].get('threshold_mode', None)
     cooldown = config['scheduler_params'].get('cooldown', None)
     min_lr = config['scheduler_params'].get('min_lr', None)
-    eps = config['scheduler_params'].get('eps', None)
+    eps = float(config['scheduler_params'].get('eps', None))
     gamma = config['scheduler_params'].get('gamma', None)
     T_max = config['scheduler_params'].get('T_max', None)
     eta_min = config['scheduler_params'].get('eta_min', None)
     T_0 = config['scheduler_params'].get('T_0', None)
     T_mult = config['scheduler_params'].get('T_mult', None)
-
 
     if scheduler_type == 'ReduceLROnPlateau':
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=scheduler_mode, factor=factor, patience=patience, threshold=threshold, threshold_mode=threshold_mode, cooldown=cooldown, min_lr=min_lr, eps=eps)

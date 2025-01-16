@@ -26,8 +26,39 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
+def train(model, train_loader, optimizer, device, logger):
+    model.train()
+    total_loss = 0
+    for batch in train_loader:
+        optimizer.zero_grad()
+        batch = {key: value.to(device) for key, value in batch.items()}
+        _, loss = model(batch, logger)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    logger.info(f"Train Loss: {total_loss / len(train_loader)}")
+    return total_loss / len(train_loader)
 
+def test(model, test_loader, device, logger):
+    model.eval()
+    total_loss = 0
+    ys_pred = []
+    ys_true = []
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = {key: value.to(device) for key, value in batch.items()}
+            y_pred, loss = model(batch, logger)
+            ys_pred.append(y_pred)
+            ys_true.append(batch['optimal_controls'])
+            total_loss += loss.item()
 
+    logger.info(f"Test Loss: {total_loss / len(test_loader)}")
+    metrics(torch.cat(ys_pred, dim=0), torch.cat(ys_true, dim=0), logger)
+    return total_loss / len(test_loader)
+
+def metrics(ys_pred, ys_true, logger):
+    mse = F.mse_loss(ys_pred, ys_true)
+    logger.info(f"MSE: {mse}")
 
 if __name__ == "__main__":
     args = parse_args()
@@ -41,12 +72,14 @@ if __name__ == "__main__":
     logger.info(f"Seed: {seed}")
     logger.info(f"Configs: {configs}")
 
-
     if configs.get('use_wandb', False):
         wandb.init(project="CFNO", config=configs)
         config = wandb.config
     else:
         config = configs
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logger.info(f"Device: {device}")
 
     # load and split data
     train_dataset, test_dataset = load_split_data(config)
@@ -59,7 +92,9 @@ if __name__ == "__main__":
     n = train_dataset.n
     T = train_dataset.T
 
-    model = CFNO(n, m, T, config, logger)
+    
+
+    model = CFNO(n, m, T, config, logger).to(device)
     logger.info(f"Model: {model}")
 
     optimizer = get_optimizer(model, config, logger)
@@ -68,7 +103,13 @@ if __name__ == "__main__":
     logger.info(f"Scheduler: {scheduler}")
     
     # Train the model
-    for batch in train_loader:
-        optimizer.zero_grad()
-        model(batch, logger)
+    logger.info("Training the model")
+    epochs = config['epochs']
+    for epoch in range(epochs):
+        logger.info(f"Epoch: {epoch}")
+        loss = train(model, train_loader, optimizer, device, logger)
+        scheduler.step(loss)
+        # Evaluate the model
+        test(model, test_loader, device, logger)
+        
     

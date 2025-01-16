@@ -16,9 +16,9 @@ class MLPParamRegressor(nn.Module):
         self.m = m
         self.T = T
         
-        # input_dim: x0 + U
-        in_dim = n + m*T
-        # output_dim: A(n*n) + B(n*m) + alpha(n)
+        # input_dim: x0 + U    U (batch_size, T, dim), X0 (batch_size, 1 , dim)
+        in_dim = n + m*T   # T * dim + dim  (batch_size, T*dim + dim)
+        # output_dim: A(n*n) + B(n*m) + alpha(n)     A (batch_size, n*n), B (batch_size, n*m), alpha (batch_size, n)
         out_dim = n*n + n*m + n
 
         num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual = self._get_config(config)
@@ -293,11 +293,9 @@ class FinalTrans(nn.Module):
         LQR_R_inv_B = torch.matmul(B, torch.matmul(LQR_R_inv, B.permute(0,2,1)))  # (batch_size, m*n)
         x = torch.matmul(G.view(self.T, batch_size, self.n, self.n), LQR_R_inv_B.unsqueeze(0).repeat(self.T, 1, 1, 1))  # (T, batch_size, n, n)
         x = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), x), x0.unsqueeze(0).repeat(self.T, 1, 1, 1).transpose(-1,-2)).squeeze(3)    # (T, batch_size, n)
-        print(f"x: {x.shape}")
         x = self.input_proj(x)  # (T, batch_size, hidden_dim)
-        print(f"x: {x.shape}")
         x = self.blocks(x)  # (T, batch_size, hidden_dim)
-        x = self.output_proj(x)
+        x = self.output_proj(x) # (T, batch_size, n)
         return x
         
 
@@ -353,7 +351,7 @@ class CFNO(nn.Module):
         return x0, U, A_true, B_true, alpha_true, LQR_Q, LAR_R, optimal_controls
     
     def _get_regress_loss(self, A, B, alpha, A_true, B_true, alpha_true, config, logger):
-        loss_type = config['identification_model_params'].get('loss', 'MSE')
+        loss_type = config['loss_params']['regression_loss'].get('loss', 'MSE')
         if loss_type == 'MSE':
             criterion = nn.MSELoss(reduction='mean')
             A_true = A_true.view(A.shape[0], -1)
@@ -366,7 +364,7 @@ class CFNO(nn.Module):
         loss_B = criterion(B, B_true)
         loss_alpha = criterion(alpha, alpha_true)
 
-        reduction = config['identification_model_params']['loss_params'].get('reduction', 'sum')
+        reduction = config['loss_params']['regression_loss'].get('reduction', 'sum')
         if reduction == 'mean':
             return torch.mean(torch.stack([loss_A, loss_B, loss_alpha]))
         elif reduction == 'sum':
@@ -376,23 +374,47 @@ class CFNO(nn.Module):
             raise NotImplementedError(f"Reduction type {reduction} not implemented")
     
 
+    def _get_label_loss(self, out, optimal_controls, config, logger):
+        loss_type = config['loss_params']['label_loss'].get('loss', 'MSE')
+        if loss_type == 'MSE':
+            criterion = nn.MSELoss(reduction='mean')
+            # optimal_controls = optimal_controls.view(out.shape[0], -1)
+        else:
+            logger.error(f"Loss type {loss_type} not implemented")
+            raise NotImplementedError(f"Loss type {loss_type} not implemented")
+        loss = criterion(out, optimal_controls)
+        return loss
+
+    def _get_loss(self, regress_loss, label_loss, config, logger):
+        reduction = config['loss_params'].get('reduction', 'sum')
+        if reduction == 'mean':
+            weight = config['loss_params']['label_loss'].get('weight', 0.5)
+            return torch.mean(torch.stack([regress_loss*(1-weight), label_loss*weight]))
+        elif reduction == 'sum':
+            return torch.sum(torch.stack([regress_loss, label_loss]))
+        else:
+            logger.error(f"Reduction type {reduction} not implemented")
+            raise NotImplementedError(f"Reduction type {reduction} not implemented")
+        
+
     def forward(self, batch, logger):
-        x0, U, A_true, B_true, alpha_true, LQR_Q, LAR_R, optimal_controls = self._get_batch(batch)
-        print('x0: ', x0.shape)
-        print('LQR_Q: ', LQR_Q.shape)
-        print('LAR_R: ', LAR_R.shape)
-        print('optimal_controls: ', optimal_controls.shape)
+        x0, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
+        # print('x0: ', x0.shape)
+        # print('LQR_Q: ', LQR_Q.shape)
+        # print('LAR_R: ', LQR_R.shape)
+        # print('optimal_controls: ', optimal_controls.shape)
         A, B, alpha = self.param_regressor(x0, U)
         # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
-        print(f"regress_loss: {regress_loss}")
+        # print(f"regress_loss: {regress_loss}")
         A_emb = self.AParmaModel(U, A, alpha)  # (T, batch_size, n)
-        print(f"T_emb: {A_emb.shape}")
+        # print(f"T_emb: {A_emb.shape}")
         G = self.GParamModel(A_emb) # (T, batch_size, n*n)
-        print(f"G: {G.shape}")
-        FNO_x = self.FinalTrans(B, G, LQR_Q, LAR_R, x0)
-        print(f"FNO_x: {FNO_x.shape}")
+        # print(f"G: {G.shape}")
+        FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x0)
+        # print(f"FNO_x: {FNO_x.shape}")
 
-        out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)
-        print(f"u: {out.shape}")
-        return A, B, alpha
+        out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
+        label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
+        # print(f"label_loss: {label_loss}")
+        return out, self._get_loss(regress_loss, label_loss, self.cfg, logger)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
