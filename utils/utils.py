@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 import torch
 import torch.optim as optim
+import os
 
 def load_configs(file_path = None):
     with open(file_path, 'r') as stream:
@@ -12,19 +13,33 @@ def load_configs(file_path = None):
             print(exc)
 
 
-def initialize_logging(file_dir = None):
+import logging
+from datetime import datetime
+import os
+
+
+def initialize_logging(file_dir=None):
+    if file_dir is None:
+        file_dir = os.path.join(os.getcwd(), 'logs')
+
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir)
 
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_file = f"{file_dir}/log_{current_time}.log"
+    log_file = os.path.join(file_dir, f"log_{current_time}.log")
 
-    logging.basicConfig(level=logging.DEBUG,  
-                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                        handlers=[
-                            logging.FileHandler(log_file),  
-                            logging.StreamHandler() 
-                        ])
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ]
+    )
+
     logger = logging.getLogger(__name__)
     return logger
+
 
 def get_scheduler(optimizer, config, logger):
     scheduler_type = config.get('scheduler', None)
