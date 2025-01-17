@@ -389,7 +389,7 @@ class CFNO(nn.Module):
         reduction = config['loss_params'].get('reduction', 'sum')
         if reduction == 'mean':
             weight = config['loss_params']['label_loss'].get('weight', 0.5)
-            return torch.mean(torch.stack([regress_loss*(1-weight), label_loss*weight]))
+            return regress_loss*(1-weight) + label_loss*weight
         elif reduction == 'sum':
             return torch.sum(torch.stack([regress_loss, label_loss]))
         else:
@@ -414,7 +414,8 @@ class CFNO(nn.Module):
         FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x0)
         # print(f"FNO_x: {FNO_x.shape}")
 
+        # out = FNO_x.transpose(0, 1)
         out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
         label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
         # print(f"label_loss: {label_loss}")
-        return out, self._get_loss(regress_loss, label_loss, self.cfg, logger)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+        return out, self._get_loss(regress_loss, label_loss, self.cfg, logger), regress_loss, label_loss                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
