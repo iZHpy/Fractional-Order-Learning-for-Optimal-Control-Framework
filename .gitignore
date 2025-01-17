@@ -25,6 +25,7 @@
 *.log
 *.sql
 *.sqlite
+*.npy
 
 # OS generated files #
 ######################

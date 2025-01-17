@@ -3,11 +3,14 @@ device: 'cuda:0'
 batch_size: 32
 epochs: 100
 wandb: False
-data_dir: './data/'
-x_mode: Initial
+data_dir: './data/data_10000filter'
+x_mode: All # Initial
 batch_size: 32
 test_size: 0.2
 num_epochs: 100
+normalize: False
+skip_connection: True
+same_system: False
 
 loss_params:
   regression_loss: 
@@ -51,7 +54,7 @@ identification_model_params:
   dropout_rate: 0
   activation: 'ReLU'
   norm_type: 'BatchNorm'
-  residual: False
+  residual: True
 
 # AParam_model: 'MLP'
 # AParam_model_params:

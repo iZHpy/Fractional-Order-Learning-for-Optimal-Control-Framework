@@ -16,7 +16,7 @@ class MLPParamRegressor(nn.Module):
         self.m = m
         self.T = T
         
-        # input_dim: x0 + U    U (batch_size, T, dim), X0 (batch_size, 1 , dim)
+        # input_dim: x + U    U (batch_size, T, dim), X (batch_size, 1 , dim)
         in_dim = n + m*T   # T * dim + dim  (batch_size, T*dim + dim)
         # output_dim: A(n*n) + B(n*m) + alpha(n)     A (batch_size, n*n), B (batch_size, n*m), alpha (batch_size, n)
         out_dim = n*n + n*m + n
@@ -54,10 +54,10 @@ class MLPParamRegressor(nn.Module):
         return num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual
 
 
-    def forward(self, x0, U):
-        x0_flat = x0.view(x0.size(0), -1)
+    def forward(self, x, U):
+        x_flat = x.view(x.size(0), -1)
         U_flat = U.view(U.size(0), -1)
-        inp = torch.cat([x0_flat, U_flat], dim=1)  # shape=(batch_size, in_dim), 
+        inp = torch.cat([x_flat, U_flat], dim=1)  # shape=(batch_size, in_dim), 
 
         # ResidualMLPBlocks
         x = self.blocks(inp)        # (batch_size, hidden_dim)
@@ -263,7 +263,7 @@ class FinalTrans(nn.Module):
             blocks.append(block)
             prev_dim = block_dims[i][-1]
         self.blocks = nn.Sequential(*blocks)
-        self.output_proj = nn.Linear(prev_dim, self.n)
+        self.output_proj = nn.Linear(prev_dim, self.m)
     
     
     def _get_config(self, config):
@@ -276,13 +276,13 @@ class FinalTrans(nn.Module):
         use_residual = config['FINAL_model_params'].get('use_residual', False)
         return num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual
         
-    def forward(self, B, G, LQR_Q, LQR_R, x0):
+    def forward(self, B, G, LQR_Q, LQR_R, x):
         """
         B: (batch_size, n*m)
         G: (T, batch_size, n*n)
         LQR_Q: (batch_size, n*n)
         LQR_R: (batch_size, m*m)
-        x0: (batch_size, n)
+        x: (batch_size, T', n)
         return: (batch_size, T, n)
         """
         batch_size = B.size(0)
@@ -291,12 +291,15 @@ class FinalTrans(nn.Module):
         LQR_R_inv = torch.inverse(LQR_R)
         # calculate the optimal trajectory
         LQR_R_inv_B = torch.matmul(B, torch.matmul(LQR_R_inv, B.permute(0,2,1)))  # (batch_size, m*n)
-        x = torch.matmul(G.view(self.T, batch_size, self.n, self.n), LQR_R_inv_B.unsqueeze(0).repeat(self.T, 1, 1, 1))  # (T, batch_size, n, n)
-        x = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), x), x0.unsqueeze(0).repeat(self.T, 1, 1, 1).transpose(-1,-2)).squeeze(3)    # (T, batch_size, n)
-        x = self.input_proj(x)  # (T, batch_size, hidden_dim)
-        x = self.blocks(x)  # (T, batch_size, hidden_dim)
-        x = self.output_proj(x) # (T, batch_size, n)
-        return x
+        y = torch.matmul(G.view(self.T, batch_size, self.n, self.n), LQR_R_inv_B.unsqueeze(0).repeat(self.T, 1, 1, 1))  # (T, batch_size, n, n)
+        if self.cfg['x_mode'] == 'All':
+            y = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), y), x.unsqueeze(3).transpose(1, 0)).squeeze(3)    # (T, batch_size, n)
+        else:
+            y = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), y), x.unsqueeze(0).repeat(self.T, 1, 1, 1).transpose(-1,-2)).squeeze(3)    # (T, batch_size, n)
+        y = self.input_proj(y)  # (T, batch_size, hidden_dim)
+        y = self.blocks(y)  # (T, batch_size, hidden_dim)
+        y = self.output_proj(y) # (T, batch_size, n)
+        return y
         
 
 # Define the CFNO model 
@@ -340,7 +343,7 @@ class CFNO(nn.Module):
 
 
     def _get_batch(self, batch):
-        x0 = batch['input_x']
+        x = batch['input_x']
         U = batch['input_u']
         A_true = batch['A']
         B_true = batch['B']
@@ -348,7 +351,7 @@ class CFNO(nn.Module):
         LQR_Q = batch['LQR_Q']
         LAR_R = batch['LQR_R']
         optimal_controls = batch['optimal_controls']
-        return x0, U, A_true, B_true, alpha_true, LQR_Q, LAR_R, optimal_controls
+        return x, U, A_true, B_true, alpha_true, LQR_Q, LAR_R, optimal_controls
     
     def _get_regress_loss(self, A, B, alpha, A_true, B_true, alpha_true, config, logger):
         loss_type = config['loss_params']['regression_loss'].get('loss', 'MSE')
@@ -398,12 +401,15 @@ class CFNO(nn.Module):
         
 
     def forward(self, batch, logger):
-        x0, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
-        # print('x0: ', x0.shape)
+        x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
+        # print('x: ', x.shape)
         # print('LQR_Q: ', LQR_Q.shape)
         # print('LAR_R: ', LQR_R.shape)
         # print('optimal_controls: ', optimal_controls.shape)
-        A, B, alpha = self.param_regressor(x0, U)
+        # A, B, alpha = self.param_regressor(x, U)
+        A = A_true.view(-1, self.n*self.n)
+        B = B_true.view(-1, self.n*self.m)
+        alpha = alpha_true.view(-1, self.n)
         # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
         # print(f"regress_loss: {regress_loss}")
@@ -411,8 +417,12 @@ class CFNO(nn.Module):
         # print(f"T_emb: {A_emb.shape}")
         G = self.GParamModel(A_emb) # (T, batch_size, n*n)
         # print(f"G: {G.shape}")
-        FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x0)
-        # print(f"FNO_x: {FNO_x.shape}")
+        
+        skip_connection = self.cfg.get('skip_connection', False)
+        if skip_connection:
+            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + U.transpose(0, 1)  # (T, batch_size, n)
+        else:
+            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
 
         # out = FNO_x.transpose(0, 1)
         out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)

@@ -5,11 +5,11 @@ from sklearn.model_selection import train_test_split
 
 
 class FractionalOrderDataset(Dataset):
-    def __init__(self, alphas, input_u, x_init, LQR_Q, LQR_R, optimal_controls, A, B, config):
+    def __init__(self, alphas, input_u, x_init, LQR_Q, LQR_R, optimal_controls, A, B, config, normalize=True):
         self.data = {
             'alphas': torch.tensor(alphas, dtype=torch.float32),
             'input_u': torch.tensor(input_u, dtype=torch.float32),
-            'input_x': torch.tensor(x_init if config['x_mode'] == 'All' else x_init[:, :1], dtype=torch.float32),
+            'input_x': torch.tensor(x_init[:,:-1] if config['x_mode'] == 'All' else x_init[:, :1], dtype=torch.float32),
             'LQR_Q': torch.tensor(LQR_Q, dtype=torch.float32),
             'LQR_R': torch.tensor(LQR_R, dtype=torch.float32),
             'optimal_controls': torch.tensor(optimal_controls, dtype=torch.float32),
@@ -21,14 +21,25 @@ class FractionalOrderDataset(Dataset):
         self.T = input_u.shape[1]
         self.config = config
         self.len = input_u.shape[0]
-        self.data['A'] = self._duplicate_and_stack(self.data['A'], self.len)
-        self.data['B'] = self._duplicate_and_stack(self.data['B'], self.len)
-        self.data['alphas'] = self._duplicate_and_stack(self.data['alphas'], self.len)
+        if config['same_system'] == True:
+            self.data['A'] = self._duplicate_and_stack(self.data['A'], self.len)
+            self.data['B'] = self._duplicate_and_stack(self.data['B'], self.len)
+            self.data['alphas'] = self._duplicate_and_stack(self.data['alphas'], self.len)
+
+        # output (batch_size, t, dim)
+        # x (batch_size, t', dim)
+
+        if normalize:
+            self._normalize_data()
 
     def _duplicate_and_stack(self, tensor, num_copies):
         return torch.stack([tensor] * num_copies, dim=0)
 
-
+    def _normalize_data(self):
+        for key in self.data:
+            if key not in ['optimal_controls']:  # Do not normalize the optimal controls
+                self.data[key] = (self.data[key] - self.data[key].mean()) / self.data[key].std()
+ 
     def __len__(self):
         return self.len
 
@@ -57,11 +68,12 @@ def load_split_data(config):
     data_dir = config['data_dir']
     test_size = config['test_size']
     random_state = config['seed']
+    normalize = config['normalize']
     alphas, inputs, x_init, LQR_Q, LQR_R, optimal_controls, A, B = load_data_from_npy(data_dir)
     train_indices, test_indices = train_test_split(np.arange(inputs.shape[0]), test_size=test_size, random_state=random_state)
     
-    train_dataset = FractionalOrderDataset(alphas, inputs[train_indices], x_init[train_indices], LQR_Q[train_indices], LQR_R[train_indices], optimal_controls[train_indices], A, B, config)
-    test_dataset = FractionalOrderDataset(alphas, inputs[test_indices], x_init[test_indices], LQR_Q[test_indices], LQR_R[test_indices], optimal_controls[test_indices], A, B, config)
+    train_dataset = FractionalOrderDataset(alphas, inputs[train_indices], x_init[train_indices], LQR_Q[train_indices], LQR_R[train_indices], optimal_controls[train_indices], A, B, config, normalize=normalize)
+    test_dataset = FractionalOrderDataset(alphas, inputs[test_indices], x_init[test_indices], LQR_Q[test_indices], LQR_R[test_indices], optimal_controls[test_indices], A, B, config, normalize=normalize)
     
     return train_dataset, test_dataset
 
