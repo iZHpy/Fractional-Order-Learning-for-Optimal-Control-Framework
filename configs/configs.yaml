@@ -7,7 +7,7 @@ data_dir: './data/one_fnosystem/'
 x_mode: All # Initial
 batch_size: 64
 test_size: 0.2
-normalize: True
+normalize: False
 skip_connection: True
 same_system: True
 
@@ -23,7 +23,7 @@ loss_params:
 
 optimizer: 'Adam'
 optimizer_params:
-  lr: 0.005
+  lr: 0.001
   weight_decay: 0.0001
 
 scheduler: 'ReduceLROnPlateau'

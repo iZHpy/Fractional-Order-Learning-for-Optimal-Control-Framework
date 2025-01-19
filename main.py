@@ -10,7 +10,7 @@ import wandb
 import argparse
 from loader.Dataloader import load_data_from_npy, load_split_data
 from torch.utils.data import DataLoader
-from layer.models import CFNO
+from layer.models import CFNO, baseFNO
 from utils.utils import LpLoss, UnitGaussianNormalizer
 
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     n = train_dataset.n
     T = train_dataset.T
 
-    model = CFNO(n, m, T, config, logger).to(device)
+    model = baseFNO(n, m, T, config, logger).to(device)
     if train_norms is not None:
         train_norms['optimal_controls'].cuda(device)
     if test_norms is not None:
