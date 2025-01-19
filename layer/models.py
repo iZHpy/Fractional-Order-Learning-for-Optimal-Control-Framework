@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from neuralop.models import FNO2d
 from layer.layers import ResidualMLPBlock
 from layer.layers import LSTMGenerator, RNNGenerator, GRUGenerator
-
+from utils.utils import LpLoss, UnitGaussianNormalizer
 
 class MLPParamRegressor(nn.Module):
     def __init__(self,
@@ -16,8 +16,8 @@ class MLPParamRegressor(nn.Module):
         self.m = m
         self.T = T
         
-        # input_dim: x + U    U (batch_size, T, dim), X (batch_size, 1 , dim)
-        in_dim = n + m*T   # T * dim + dim  (batch_size, T*dim + dim)
+        # in_dim = n + m*T   # T * dim + dim  (batch_size, T*dim + dim)
+        in_dim = n*T
         # output_dim: A(n*n) + B(n*m) + alpha(n)     A (batch_size, n*n), B (batch_size, n*m), alpha (batch_size, n)
         out_dim = n*n + n*m + n
 
@@ -56,8 +56,10 @@ class MLPParamRegressor(nn.Module):
 
     def forward(self, x, U):
         x_flat = x.view(x.size(0), -1)
-        U_flat = U.view(U.size(0), -1)
-        inp = torch.cat([x_flat, U_flat], dim=1)  # shape=(batch_size, in_dim), 
+
+        inp = x_flat
+        # U_flat = U.view(U.size(0), -1)
+        # inp = torch.cat([x_flat, U_flat], dim=1)  # shape=(batch_size, in_dim), 
 
         # ResidualMLPBlocks
         x = self.blocks(inp)        # (batch_size, hidden_dim)
@@ -94,39 +96,61 @@ class A_ParamEmbedding(nn.Module):
         self.m = m
         self.T = T
         self.cfg = config
-        hidden_size, dropout_rate, norm_type, activation, use_residual, use_U = self._get_config(config)
+        hidden_size, dropout_rate, norm_type, activation, use_residual, use_x = self._get_config(config)
         self.output_size = config['AParam_model_params'].get('output_size', n)
 
-        self.Embedding = nn.Embedding(T, hidden_size//2)
-        self.fc1 = nn.Linear(n*2, hidden_size)
-        self.fc2 = nn.Linear(n, hidden_size//2)
-        self.fc3 = nn.Linear(hidden_size, self.output_size)
-        self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
-        self.dropout = nn.Dropout(dropout_rate)
-        self.norm_type = norm_type
-        self.norm = [nn.BatchNorm1d(self.output_size), nn.LayerNorm(self.output_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+        self.use_x = config['AParam_model_params'].get('use_x', False)
+        if use_x:
+            self.fc1 = nn.Linear(n, hidden_size//2)
+            self.fc2 = nn.Linear(n, hidden_size//2)
+            self.fc3 = nn.Linear(hidden_size, self.output_size)
+            self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
+            self.dropout = nn.Dropout(dropout_rate)
+            self.norm_type = norm_type
+            self.norm = [nn.BatchNorm1d(self.output_size), nn.LayerNorm(self.output_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+        else:
+            self.Embedding = nn.Embedding(T, hidden_size//2)
+            self.fc1 = nn.Linear(n*2, hidden_size)
+            self.fc2 = nn.Linear(n, hidden_size//2)
+            self.fc3 = nn.Linear(hidden_size, self.output_size)
+            self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
+            self.dropout = nn.Dropout(dropout_rate)
+            self.norm_type = norm_type
+            self.norm = [nn.BatchNorm1d(self.output_size), nn.LayerNorm(self.output_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
 
 
-    def forward(self, U, A_flat, alpha):
-        # calculate the eigenvalues of A
-        A0 = A_flat.view(A_flat.shape[0], self.n, self.n) - torch.diag_embed(alpha)
-        eigenvalues, eigenvectors = torch.linalg.eig(A0) # (batch_size, n), (batch_size, n, n)
-        eigenvalues_real = torch.view_as_real(eigenvalues)  # (batch_size, n, 2)
-        eigenvalues_real = eigenvalues_real.view(eigenvalues_real.shape[0], -1)  # (batch_size, n * 2)
+    def forward(self, x, A_flat, alpha):
+        if self.use_x:
+            emb0 = self.act(self.fc1(x))  # (batch_size, T, hidden_size//2)
+            emb1 = self.act(self.fc2(alpha.unsqueeze(1).repeat(1, self.T, 1)))  # (batch_size, T, hidden_size//2)
+            emb = torch.cat([emb0, emb1], dim=2)  # (batch_size, T, hidden_size)
+            emb = self.dropout(self.act(self.fc3(emb))).transpose(0, 1)  # (T, batch_size, output_size)
+            if self.norm_type == 'BatchNorm':
+                emb = self.norm(emb.permute(1, 2, 0)).permute(2, 0, 1)
+            elif self.norm_type == 'LayerNorm':
+                emb = self.norm(emb)
+            return emb
 
-        A0_emb = self.act(self.fc1(eigenvalues_real)) # (batch_size, n)
-        alpha_emb = self.act(self.fc2(alpha.unsqueeze(1).repeat(1, self.T - 1, 1))) # (batch_size, T, hidden_size//2)
+        else:
+            # calculate the eigenvalues of A
+            A0 = A_flat.view(A_flat.shape[0], self.n, self.n) - torch.diag_embed(alpha)
+            eigenvalues, eigenvectors = torch.linalg.eig(A0) # (batch_size, n), (batch_size, n, n)
+            eigenvalues_real = torch.view_as_real(eigenvalues)  # (batch_size, n, 2)
+            eigenvalues_real = eigenvalues_real.view(eigenvalues_real.shape[0], -1)  # (batch_size, n * 2)
 
-        Ts = torch.arange(self.T-1).unsqueeze(0).repeat(A_flat.size(0), 1).to(A_flat.device)
-        T_emb = self.Embedding(Ts) # (batch_size, T-1, hidden_size//2)
-        T_emb = torch.cat([T_emb, alpha_emb], dim=2)  # (batch_size, T-1, hidden_size)
-        T_emb = torch.cat([A0_emb.unsqueeze(1), T_emb], dim=1)  # (batch_size, T, hidden_size)
-        emb = self.dropout(self.act(self.fc3(T_emb))).transpose(0, 1)  # (T, batch_size, output_size)
-        if self.norm_type == 'BatchNorm':
-            emb = self.norm(emb.permute(1, 2, 0)).permute(2, 0, 1)
-        elif self.norm_type == 'LayerNorm':
-            emb = self.norm(emb)
-        return emb
+            A0_emb = self.act(self.fc1(eigenvalues_real)) # (batch_size, n)
+            alpha_emb = self.act(self.fc2(alpha.unsqueeze(1).repeat(1, self.T - 1, 1))) # (batch_size, T, hidden_size//2)
+
+            Ts = torch.arange(self.T-1).unsqueeze(0).repeat(A_flat.size(0), 1).to(A_flat.device)
+            T_emb = self.Embedding(Ts) # (batch_size, T-1, hidden_size//2)
+            T_emb = torch.cat([T_emb, alpha_emb], dim=2)  # (batch_size, T-1, hidden_size)
+            T_emb = torch.cat([A0_emb.unsqueeze(1), T_emb], dim=1)  # (batch_size, T, hidden_size)
+            emb = self.dropout(self.act(self.fc3(T_emb))).transpose(0, 1)  # (T, batch_size, output_size)
+            if self.norm_type == 'BatchNorm':
+                emb = self.norm(emb.permute(1, 2, 0)).permute(2, 0, 1)
+            elif self.norm_type == 'LayerNorm':
+                emb = self.norm(emb)
+            return emb
     
     def _get_config(self, config):
         hidden_size = config['AParam_model_params'].get('hidden_size', 64)
@@ -134,8 +158,8 @@ class A_ParamEmbedding(nn.Module):
         norm_type = config['AParam_model_params'].get('norm_type', None)
         activation = config['AParam_model_params'].get('activation', 'ReLU')
         use_residual = config['AParam_model_params'].get('use_residual', False)
-        use_U = config['AParam_model_params'].get('use_U', False)
-        return  hidden_size, dropout_rate, norm_type, activation, use_residual, use_U
+        use_x = config['AParam_model_params'].get('use_x', False)
+        return  hidden_size, dropout_rate, norm_type, activation, use_residual, use_x
         
 class A_ParamMLP(nn.Module):
     def __init__(self, n, T, config=None):
@@ -357,12 +381,13 @@ class CFNO(nn.Module):
         loss_type = config['loss_params']['regression_loss'].get('loss', 'MSE')
         if loss_type == 'MSE':
             criterion = nn.MSELoss(reduction='mean')
-            A_true = A_true.view(A.shape[0], -1)
-            B_true = B_true.view(B.shape[0], -1)
+        elif loss_type == 'Lploss':
+            criterion = LpLoss()
         else:
             logger.error(f"Loss type {loss_type} not implemented")
             raise NotImplementedError(f"Loss type {loss_type} not implemented")
-        
+        A_true = A_true.view(A.shape[0], -1)
+        B_true = B_true.view(B.shape[0], -1)        
         loss_A = criterion(A, A_true)
         loss_B = criterion(B, B_true)
         loss_alpha = criterion(alpha, alpha_true)
@@ -381,7 +406,8 @@ class CFNO(nn.Module):
         loss_type = config['loss_params']['label_loss'].get('loss', 'MSE')
         if loss_type == 'MSE':
             criterion = nn.MSELoss(reduction='mean')
-            # optimal_controls = optimal_controls.view(out.shape[0], -1)
+        elif loss_type == 'Lploss':
+            criterion = LpLoss()
         else:
             logger.error(f"Loss type {loss_type} not implemented")
             raise NotImplementedError(f"Loss type {loss_type} not implemented")
@@ -400,20 +426,62 @@ class CFNO(nn.Module):
             raise NotImplementedError(f"Reduction type {reduction} not implemented")
         
 
-    def forward(self, batch, logger):
+    # def forward(self, batch, norms, logger):
+    #     x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
+    #     # print('x: ', x.shape)
+    #     # print('LQR_Q: ', LQR_Q.shape)
+    #     # print('LAR_R: ', LQR_R.shape)
+    #     # print('optimal_controls: ', optimal_controls.shape)
+    #     # A, B, alpha = self.param_regressor(x, U)
+    #     A = A_true.view(-1, self.n*self.n)
+    #     B = B_true.view(-1, self.n*self.m)
+    #     alpha = alpha_true.view(-1, self.n)
+    #     # A ,B and alpha loss
+    #     regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
+    #     # print(f"regress_loss: {regress_loss}")
+    #     A_emb = self.AParmaModel(x, A, alpha)  # (T, batch_size, n)
+    #     # print(f"T_emb: {A_emb.shape}")
+    #     G = self.GParamModel(A_emb) # (T, batch_size, n*n)
+    #     # print(f"G: {G.shape}")
+        
+    #     skip_connection = self.cfg.get('skip_connection', False)
+    #     if skip_connection:
+    #         FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + U.transpose(0, 1)  # (T, batch_size, n)
+    #     else:
+    #         FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
+
+    #     out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
+       
+    #     if norms is not None:
+    #         out = norms['optimal_controls'].decode(out)
+    #         optimal_controls = norms['optimal_controls'].decode(optimal_controls)
+
+    #     label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
+    #     # print(f"label_loss: {label_loss}")
+    #     return out, self._get_loss(regress_loss, label_loss, self.cfg, logger), regress_loss, label_loss                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+
+    # FNO baseline
+    # def forward(self, batch, norms, logger):
+    #     x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
+    #     out = self.FNO(x.unsqueeze(1)).squeeze(1)
+    #     if norms is not None:
+    #         out = norms['optimal_controls'].decode(out)
+    #         optimal_controls = norms['optimal_controls'].decode(optimal_controls)
+    #     label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
+    #     return out, label_loss, label_loss, label_loss
+
+
+    def forward(self, batch, norms, logger):
         x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
         # print('x: ', x.shape)
         # print('LQR_Q: ', LQR_Q.shape)
         # print('LAR_R: ', LQR_R.shape)
         # print('optimal_controls: ', optimal_controls.shape)
-        # A, B, alpha = self.param_regressor(x, U)
-        A = A_true.view(-1, self.n*self.n)
-        B = B_true.view(-1, self.n*self.m)
-        alpha = alpha_true.view(-1, self.n)
+        A, B, alpha = self.param_regressor(x, U)
         # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
         # print(f"regress_loss: {regress_loss}")
-        A_emb = self.AParmaModel(U, A, alpha)  # (T, batch_size, n)
+        A_emb = self.AParmaModel(x, A, alpha)  # (T, batch_size, n)
         # print(f"T_emb: {A_emb.shape}")
         G = self.GParamModel(A_emb) # (T, batch_size, n*n)
         # print(f"G: {G.shape}")
@@ -424,8 +492,12 @@ class CFNO(nn.Module):
         else:
             FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
 
-        # out = FNO_x.transpose(0, 1)
         out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
+       
+        if norms is not None:
+            out = norms['optimal_controls'].decode(out)
+            optimal_controls = norms['optimal_controls'].decode(optimal_controls)
+
         label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
         # print(f"label_loss: {label_loss}")
         return out, self._get_loss(regress_loss, label_loss, self.cfg, logger), regress_loss, label_loss                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      

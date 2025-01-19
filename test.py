@@ -17,8 +17,8 @@ print(LQR_Q.shape)
 LQR_R = np.load('/home/zhangpeiyu/llm/interpretability_llm/CFNO/data/data_10000filter/LQR_R.npy')
 print(LQR_R.shape)
 
-optimal_controls = np.load('/home/zhangpeiyu/llm/interpretability_llm/CFNO/data/data_10000filter/optimal_control_U.npy')
-print(optimal_controls.shape)
+optimal_controls = np.load('/home/zhangpeiyu/llm/interpretability_llm/CFNO/data/data_1000/optimal_control_U.npy')
+print(optimal_controls)
 
 A = np.load('/home/zhangpeiyu/llm/interpretability_llm/CFNO/data/data_10000filter/system_matrix_A.npy')
 print(A.shape)

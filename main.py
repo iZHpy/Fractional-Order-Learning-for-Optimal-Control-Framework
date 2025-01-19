@@ -11,6 +11,7 @@ import argparse
 from loader.Dataloader import load_data_from_npy, load_split_data
 from torch.utils.data import DataLoader
 from layer.models import CFNO
+from utils.utils import LpLoss, UnitGaussianNormalizer
 
 
 def parse_args():
@@ -25,7 +26,8 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def train(model, train_loader, optimizer, device, logger):
+
+def train(model, train_loader, train_norms, optimizer, device, logger):
     model.train()
     total_loss = 0
     total_regression_loss = 0
@@ -33,7 +35,7 @@ def train(model, train_loader, optimizer, device, logger):
     for batch in train_loader:
         optimizer.zero_grad()
         batch = {key: value.to(device) for key, value in batch.items()}
-        _, loss, regression_loss, label_loss = model(batch, logger)
+        _, loss, regression_loss, label_loss = model(batch, train_norms, logger)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -44,7 +46,7 @@ def train(model, train_loader, optimizer, device, logger):
     logger.info(f"Train Label Loss: {total_label_loss / len(train_loader)}")
     return total_loss / len(train_loader)
 
-def test(model, test_loader, device, logger):
+def test(model, test_loader, test_norms, device, logger):
     model.eval()
     total_loss = 0
     total_regression_loss = 0
@@ -54,9 +56,12 @@ def test(model, test_loader, device, logger):
     with torch.no_grad():
         for batch in test_loader:
             batch = {key: value.to(device) for key, value in batch.items()}
-            y_pred, loss, regression_loss, label_loss = model(batch, logger)
+            y_pred, loss, regression_loss, label_loss = model(batch, test_norms, logger)
             ys_pred.append(y_pred)
-            ys_true.append(batch['optimal_controls'])
+            if test_norms is not None:
+                ys_true.append(test_norms['optimal_controls'].decode(batch['optimal_controls']))
+            else:
+                ys_true.append(batch['optimal_controls'])
             total_loss += loss.item()
             total_regression_loss += regression_loss.item()
             total_label_loss += label_loss.item()
@@ -69,7 +74,9 @@ def test(model, test_loader, device, logger):
 
 def metrics(ys_pred, ys_true, logger):
     mse = F.mse_loss(ys_pred, ys_true)
+    lploss = LpLoss()(ys_pred, ys_true)
     logger.info(f"MSE: {mse}")
+    logger.info(f"LpLoss: {lploss}")
 
 if __name__ == "__main__":
     args = parse_args()
@@ -93,7 +100,7 @@ if __name__ == "__main__":
     logger.info(f"Device: {device}")
 
     # load and split data
-    train_dataset, test_dataset = load_split_data(config)
+    train_dataset, test_dataset, train_norms, test_norms = load_split_data(config)
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False)
     logger.info(f"Loaded data from: {config['data_dir']}")
@@ -104,6 +111,12 @@ if __name__ == "__main__":
     T = train_dataset.T
 
     model = CFNO(n, m, T, config, logger).to(device)
+    if train_norms is not None:
+        train_norms['optimal_controls'].cuda(device)
+    if test_norms is not None:
+        test_norms['optimal_controls'].cuda(device)
+        logger.info("Using normalization")
+
     logger.info(f"Model: {model}")
 
     optimizer = get_optimizer(model, config, logger)
@@ -116,9 +129,9 @@ if __name__ == "__main__":
     epochs = config['epochs']
     for epoch in range(epochs):
         logger.info(f"Epoch: {epoch}")
-        loss = train(model, train_loader, optimizer, device, logger)
+        loss = train(model, train_loader, train_norms, optimizer, device, logger)
         scheduler.step(loss)
         # Evaluate the model
-        test(model, test_loader, device, logger)
+        test(model, test_loader, test_norms, device, logger)
         
     

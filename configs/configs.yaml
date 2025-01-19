@@ -3,28 +3,27 @@ device: 'cuda:0'
 batch_size: 32
 epochs: 100
 wandb: False
-data_dir: './data/data_10000filter'
+data_dir: './data/one_fnosystem/'
 x_mode: All # Initial
-batch_size: 32
+batch_size: 64
 test_size: 0.2
-num_epochs: 100
-normalize: False
+normalize: True
 skip_connection: True
-same_system: False
+same_system: True
 
 loss_params:
   regression_loss: 
     loss: 'MSE'
     reduction: 'sum'
   label_loss:
-    loss: 'MSE'
-    weight: 0.9
+    loss: 'Lploss'
+    weight: 1
   reduction: 'mean'
 
 
 optimizer: 'Adam'
 optimizer_params:
-  lr: 0.001
+  lr: 0.005
   weight_decay: 0.0001
 
 scheduler: 'ReduceLROnPlateau'
@@ -74,9 +73,9 @@ AParam_model_params:
   output_size: 5
   dropout_rate: 0
   activation: 'ReLU'
-  norm_type: 'BatchNorm'
+  norm_type: 'LayerNorm'
   residual: False
-  use_U: False
+  use_x: True
 
 GParam_model:  LSTM # GRU, RNN, Transformer
 GParam_model_params:
@@ -84,7 +83,7 @@ GParam_model_params:
   num_layers: 2
   dropout_rate: 0
   activation: 'ReLU'
-  norm_type: 'BatchNorm'
+  norm_type: 'LayerNorm'
   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
   bidirectional: False
 
