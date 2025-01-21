@@ -45,15 +45,26 @@ early_stopping_params:
   monitor: 'val_loss'
   verbose: False
 
-identification_model: 'MLP' # RNN LSTM GRU
+identification_model: LSTM
 identification_model_params:
-  num_blocks: 2
-  block_layers: [2, 2]
-  hidden_size: [[64, 128],[128, 128]]
+  hidden_size: 64
+  num_layers: 2
   dropout_rate: 0
   activation: 'ReLU'
-  norm_type: 'BatchNorm'
-  residual: True
+  norm_type: 'LayerNorm'
+  seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
+  bidirectional: False
+
+
+# identification_model: 'MLP' # RNN LSTM GRU
+# identification_model_params:
+#   num_blocks: 2
+#   block_layers: [2, 2]
+#   hidden_size: [[64, 128],[128, 128]]
+#   dropout_rate: 0
+#   activation: 'ReLU'
+#   norm_type: 'BatchNorm'
+#   use_residual: False
 
 # AParam_model: 'MLP'
 # AParam_model_params:
@@ -64,7 +75,7 @@ identification_model_params:
 #   dropout_rate: 0.2
 #   activation: 'ReLU'
 #   norm_type: 'BatchNorm'
-#   residual: False
+#   use_residual: False
 #   use_U: False
 
 AParam_model: 'Embedding'
@@ -74,7 +85,7 @@ AParam_model_params:
   dropout_rate: 0
   activation: 'ReLU'
   norm_type: 'LayerNorm'
-  residual: False
+  use_residual: False
   use_x: True
 
 GParam_model:  LSTM # GRU, RNN, Transformer
@@ -93,7 +104,7 @@ FINAL_model_params:
   dropout_rate: 0
   activation: 'ReLU'
   norm_type: 'LayerNorm'
-  residual: False
+  use_residual: False
   
   
 

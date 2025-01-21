@@ -266,13 +266,10 @@ class AtoGTransformer(nn.Module):
 
     def forward(self, src, tgt):
         """
-        src: [batch_size, src_seq_len, d_model]
-        tgt: [batch_size, tgt_seq_len, d_model]
-        returns: [batch_size, tgt_seq_len, d_model]
+        src: [src_seq_len, batch_size, d_model]
+        tgt: [tgt_seq_len, batch_size, d_model]
+        returns: [tgt_seq_len, batch_size, d_model]
         """
-        #  (seq_len, batch_size, d_model)
-        src = src.transpose(0, 1)  # -> (src_seq_len, batch_size, d_model)
-        tgt = tgt.transpose(0, 1)  # -> (tgt_seq_len, batch_size, d_model)
 
         # project to d_model
         src_embed = self.src_linear(src)  # (src_seq_len, batch_size, d_model)
@@ -288,8 +285,6 @@ class AtoGTransformer(nn.Module):
         # out shape: (tgt_seq_len, batch_size, d_model)
         out = self.output_linear(out)
 
-        # back to (batch_size, tgt_seq_len, d_model)
-        out = out.transpose(0, 1)
         return out
     
 

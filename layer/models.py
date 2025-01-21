@@ -8,6 +8,89 @@ from layer.layers import LSTMGenerator, RNNGenerator, GRUGenerator
 from utils.utils import LpLoss, UnitGaussianNormalizer
 
 
+class SEQParamRegressor(nn.Module):
+    def __init__(self,
+                n, m, T,
+                config):
+        super().__init__()
+        self.n = n
+        self.m = m
+        self.T = T
+        model_type, hidden_size, num_layers, dropout_rate, norm_type, activation, bidirectional = self._get_config(config)
+        self.bidirectional = bidirectional
+        if model_type == 'RNN':
+            self.seq = nn.RNN(
+                input_size=self.n, 
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,         # (batch, seq_len, input_size)
+                bidirectional=bidirectional
+        )
+        elif model_type == 'LSTM':
+            self.seq = nn.LSTM(
+                input_size=self.n,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,
+                bidirectional=bidirectional
+            )
+        elif model_type == 'GRU':
+            self.seq = nn.GRU(
+                input_size=self.n,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,
+                bidirectional=bidirectional
+            )
+        pre_dim = hidden_size*2 if bidirectional else hidden_size
+        output_dim = self.n*self.n + self.n*self.m + self.n
+        self.fc = nn.Linear(pre_dim, output_dim)
+        self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
+        self.dropout = nn.Dropout(dropout_rate)
+        self.norm_type = norm_type
+        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+
+    def forward(self, x, U):
+        """
+        x: (batch_size, T, n)
+        U: (batch_size, T, m)
+        return: (batch_size, n*n + n*m + n)
+        """
+        x = x.view(x.size(0), -1, self.n)
+        U = U.view(U.size(0), -1, self.m)
+        # x = torch.cat([x, U], dim=2)  # (batch_size, T, n+m)
+        if self.seq.__class__.__name__ == 'LSTM':
+            x, (h, c) = self.seq(x) # x: (batch_size, T, hidden_size), h: (num_layers, batch_size, hidden_size)
+        else:
+            x, h = self.seq(x) # x: (batch_size, T, hidden_size), h: (num_layers, batch_size, hidden_size)
+        if self.bidirectional:
+            forward_hn = h[-2]
+            backward_hn = h[-1]
+            hn = torch.cat([forward_hn, backward_hn], dim=1)
+        else:
+            hn = h[-1]
+        hn = self.dropout(self.act(self.fc(hn)))
+        hn = self.norm(hn)
+        nn_ = self.n*self.n
+        nm_ = self.n*self.m
+        A_flat = hn[:, :nn_]
+        B_flat = hn[:, nn_ : nn_ + nm_]
+        alpha_flat = hn[:, nn_ + nm_:]
+        
+        return A_flat, B_flat, alpha_flat
+
+    
+    def _get_config(self, config):
+        model_type = config['identification_model']
+        hidden_size = config['identification_model_params'].get('hidden_size', 64)
+        num_layers = config['identification_model_params'].get('num_layers', 2)
+        dropout_rate = config['identification_model_params'].get('dropout_rate', 0.0)
+        norm_type = config['identification_model_params'].get('norm_type', None)
+        activation = config['identification_model_params'].get('activation', 'ReLU')
+        bidirectional = config['identification_model_params'].get('bidirectional', False)
+        return model_type, hidden_size, num_layers, dropout_rate, norm_type, activation, bidirectional
+    
+
 
 class MLPParamRegressor(nn.Module):
     def __init__(self,
@@ -59,7 +142,6 @@ class MLPParamRegressor(nn.Module):
 
     def forward(self, x, U):
         x_flat = x.view(x.size(0), -1)
-
         inp = x_flat
         # U_flat = U.view(U.size(0), -1)
         # inp = torch.cat([x_flat, U_flat], dim=1)  # shape=(batch_size, in_dim), 
@@ -78,16 +160,7 @@ class MLPParamRegressor(nn.Module):
         alpha_flat = out[:, nn_ + nm_:]
 
         return A_flat, B_flat, alpha_flat
-    
-    def _get_config(self, config):
-        num_blocks = config['identification_model_params'].get('num_blocks', 2)
-        block_dims = config['identification_model_params'].get('hidden_size', [64, 64])
-        block_layers = config['identification_model_params'].get('block_layers', [2, 2])
-        dropout_rate = config['identification_model_params'].get('dropout_rate', 0.0)
-        norm_type = config['identification_model_params'].get('norm_type', None)
-        activation = config['identification_model_params'].get('activation', 'ReLU')
-        use_residual = config['identification_model_params'].get('use_residual', False)
-        return num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual
+
 
 class A_ParamEmbedding(nn.Module):
     def __init__(self,
@@ -250,7 +323,7 @@ class GParamModel(nn.Module):
     def _get_config(self, config):
         model_type = config['GParam_model']
         hidden_size = config['GParam_model_params'].get('hidden_size', 64)
-        num_layers = config['GParam_model_params'].get('block_layers', 2)
+        num_layers = config['GParam_model_params'].get('num_layers', 2)
         dropout_rate = config['GParam_model_params'].get('dropout_rate', 0.0)
         norm_type = config['GParam_model_params'].get('norm_type', None)
         activation = config['GParam_model_params'].get('activation', 'ReLU')
@@ -287,7 +360,7 @@ class FinalTrans(nn.Module):
         dropout_rate = config['FINAL_model_params'].get('dropout_rate', 0.0)
         norm_type = config['FINAL_model_params'].get('norm_type', None)
         activation = config['FINAL_model_params'].get('activation', 'ReLU')
-        QRB_size = config['FINAL_model_params'].get('QRB_size', 64)
+        QRB_size = config['FINAL_model_params'].get('QRB_size', 3)
         return QRB_size, hidden_size, dropout_rate, norm_type, activation
         
     def forward(self, B, G, LQR_Q, LQR_R, x):
@@ -324,13 +397,9 @@ class CFNO(nn.Module):
         self.cfg = config
         if config['identification_model'] == 'MLP':
             self.param_regressor = MLPParamRegressor(n, m, T, config)
-        elif config['identification_model'] == 'RNN':
-            logger.error(f"Identification model {config['identification_model']} not implemented")
-            raise NotImplementedError(f"Identification model {config['identification_model']} not implemented")
-        elif config['identification_model'] == 'LSTM':
-            logger.error(f"Identification model {config['identification_model']} not implemented")
-            raise NotImplementedError(f"Identification model {config['identification_model']} not implemented")
-
+        elif (config['identification_model'] == 'RNN') or (config['identification_model'] == 'LSTM') or (config['identification_model'] == 'GRU'):
+            self.param_regressor = SEQParamRegressor(n, m, T, config)
+            
         if config['AParam_model'] == 'Embedding':
             self.AParmaModel = A_ParamEmbedding(n, m, T, config)
         elif config['AParam_model'] == 'Formula':
