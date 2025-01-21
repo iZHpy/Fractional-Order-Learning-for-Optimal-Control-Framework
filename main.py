@@ -104,13 +104,13 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False)
     logger.info(f"Loaded data from: {config['data_dir']}")
-
     # Define the model
     m = train_dataset.m
     n = train_dataset.n
     T = train_dataset.T
 
-    model = baseFNO(n, m, T, config, logger).to(device)
+    # model = baseFNO(n, m, T, config, logger).to(device)
+    model = CFNO(n, m, T, config, logger).to(device)
     if train_norms is not None:
         train_norms['optimal_controls'].cuda(device)
     if test_norms is not None:

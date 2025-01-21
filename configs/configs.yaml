@@ -1,23 +1,23 @@
 seed: 42
 device: 'cuda:0'
 batch_size: 32
-epochs: 100
+epochs: 200
 wandb: False
 data_dir: './data/one_fnosystem/'
 x_mode: All # Initial
 batch_size: 64
 test_size: 0.2
-normalize: False
-skip_connection: True
+normalize: True
+skip_connection: False
 same_system: True
 
 loss_params:
   regression_loss: 
-    loss: 'MSE'
+    loss: 'Lploss'
     reduction: 'sum'
   label_loss:
     loss: 'Lploss'
-    weight: 1
+    weight: 0.9
   reduction: 'mean'
 
 
@@ -30,7 +30,7 @@ scheduler: 'ReduceLROnPlateau'
 scheduler_params:
   mode: 'min'
   factor: 0.1
-  patience: 10
+  patience: 5
   threshold: 0.0001
   threshold_mode: 'rel'
   cooldown: 0
@@ -88,9 +88,8 @@ GParam_model_params:
   bidirectional: False
 
 FINAL_model_params:
-  num_blocks: 1
-  block_layers: [2]
-  hidden_size: [[64, 64]]
+  QRB_size: 3
+  hidden_size: 64
   dropout_rate: 0
   activation: 'ReLU'
   norm_type: 'LayerNorm'

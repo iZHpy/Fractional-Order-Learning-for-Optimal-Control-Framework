@@ -234,11 +234,11 @@ class GParamModel(nn.Module):
         self.T = T
         model_type, hidden_size, num_layers, dropout_rate, norm_type, activation = self._get_config(config)
         if model_type == 'RNN':
-            self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n*n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
         elif model_type == 'LSTM':
-            self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n*n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
         elif model_type == 'GRU':
-            self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n*n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
         elif model_type == 'Transformer':
             logger.error(f"Model type {model_type} not implemented")
             raise NotImplementedError(f"Model type {model_type} not implemented")
@@ -273,35 +273,22 @@ class FinalTrans(nn.Module):
         self.T = T
         self.cfg = config
         self.input_dim = n
-        num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual = self._get_config(config)
-        self.input_proj = nn.Linear(self.input_dim, block_dims[0][0])
-        blocks = []
-        prev_dim = block_dims[0][0]
-        for i in range(num_blocks):
-            block = ResidualMLPBlock(
-                in_dim=prev_dim,
-                hidden_dims=block_dims[i],
-                num_layers=block_layers[i],
-                dropout_rate=dropout_rate,
-                norm_type=norm_type,
-                activation=activation,
-                use_residual=use_residual  
-            )
-            blocks.append(block)
-            prev_dim = block_dims[i][-1]
-        self.blocks = nn.Sequential(*blocks)
-        self.output_proj = nn.Linear(prev_dim, self.m)
-    
+        QRB_size, hidden_size, dropout_rate, norm_type, activation= self._get_config(config)
+        self.fc_B = nn.Linear(n*m, hidden_size)
+        self.fc_LQR_Q = nn.Linear(n*n, hidden_size)
+        self.fc_LQR_R = nn.Linear(m*m, hidden_size)
+        self.fc = nn.Linear(hidden_size*3, QRB_size)
+        self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
+        self.dropout = nn.Dropout(dropout_rate)
+        self.norm = [nn.BatchNorm1d(QRB_size), nn.LayerNorm(QRB_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
     
     def _get_config(self, config):
-        num_blocks = config['FINAL_model_params'].get('num_blocks', 2)
-        block_dims = config['FINAL_model_params'].get('hidden_size', [64, 64])
-        block_layers = config['FINAL_model_params'].get('block_layers', [2, 2])
+        hidden_size = config['FINAL_model_params'].get('hidden_size', 64)
         dropout_rate = config['FINAL_model_params'].get('dropout_rate', 0.0)
         norm_type = config['FINAL_model_params'].get('norm_type', None)
         activation = config['FINAL_model_params'].get('activation', 'ReLU')
-        use_residual = config['FINAL_model_params'].get('use_residual', False)
-        return num_blocks, block_dims, block_layers, dropout_rate, norm_type, activation, use_residual
+        QRB_size = config['FINAL_model_params'].get('QRB_size', 64)
+        return QRB_size, hidden_size, dropout_rate, norm_type, activation
         
     def forward(self, B, G, LQR_Q, LQR_R, x):
         """
@@ -309,24 +296,19 @@ class FinalTrans(nn.Module):
         G: (T, batch_size, n*n)
         LQR_Q: (batch_size, n*n)
         LQR_R: (batch_size, m*m)
-        x: (batch_size, T', n)
+        x: (batch_size, T, n)
         return: (batch_size, T, n)
         """
-        batch_size = B.size(0)
-        B = B.view(batch_size, self.n, self.m)
-        # calculate the inverse of LQR_R
-        LQR_R_inv = torch.inverse(LQR_R)
-        # calculate the optimal trajectory
-        LQR_R_inv_B = torch.matmul(B, torch.matmul(LQR_R_inv, B.permute(0,2,1)))  # (batch_size, m*n)
-        y = torch.matmul(G.view(self.T, batch_size, self.n, self.n), LQR_R_inv_B.unsqueeze(0).repeat(self.T, 1, 1, 1))  # (T, batch_size, n, n)
-        if self.cfg['x_mode'] == 'All':
-            y = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), y), x.unsqueeze(3).transpose(1, 0)).squeeze(3)    # (T, batch_size, n)
-        else:
-            y = torch.matmul(torch.matmul(LQR_Q.unsqueeze(0).repeat(self.T, 1, 1, 1), y), x.unsqueeze(0).repeat(self.T, 1, 1, 1).transpose(-1,-2)).squeeze(3)    # (T, batch_size, n)
-        y = self.input_proj(y)  # (T, batch_size, hidden_dim)
-        y = self.blocks(y)  # (T, batch_size, hidden_dim)
-        y = self.output_proj(y) # (T, batch_size, n)
-        return y
+        emb1 = self.act(self.fc_LQR_Q(LQR_Q.view(-1, self.n*self.n))) # q (batch_size, 25), (batch_size, 64) 
+        emb2 = self.act(self.fc_LQR_R(LQR_R.view(-1, self.m*self.m))) # r (batch_size, 25), (batch_size, 64)
+        emb3 = self.act(self.fc_B(B)) # B (batch_size, 25), (batch_size, 64)
+        emb = torch.cat([emb1, emb2, emb3], dim=1).unsqueeze(0).repeat(self.T, 1, 1) # (T, batch_size, 128)
+        emb = self.act(self.fc(emb)) # (T, batch_size, qrb_size)
+        emb = self.dropout(emb)
+        out = self.norm(emb) # (T, batch_size, 5)
+        out = torch.cat([out, x.permute(1,0,2), G], dim=2)
+
+        return out
         
 
 # Define the CFNO model 
@@ -361,8 +343,8 @@ class CFNO(nn.Module):
         self.GParamModel = GParamModel(n, m, T, input_dim, config, logger)
         self.FinalTrans = FinalTrans(n, m, T, config, logger)
         self.FNO = FNO1d(
-            in_channels=5,
-            out_channels=5,
+            in_channels=13,
+            out_channels=self.m,
             n_modes_height=16,
             hidden_channels=64
         )
@@ -428,51 +410,6 @@ class CFNO(nn.Module):
             raise NotImplementedError(f"Reduction type {reduction} not implemented")
         
 
-    # def forward(self, batch, norms, logger):
-    #     x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
-    #     # print('x: ', x.shape)
-    #     # print('LQR_Q: ', LQR_Q.shape)
-    #     # print('LAR_R: ', LQR_R.shape)
-    #     # print('optimal_controls: ', optimal_controls.shape)
-    #     # A, B, alpha = self.param_regressor(x, U)
-    #     A = A_true.view(-1, self.n*self.n)
-    #     B = B_true.view(-1, self.n*self.m)
-    #     alpha = alpha_true.view(-1, self.n)
-    #     # A ,B and alpha loss
-    #     regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
-    #     # print(f"regress_loss: {regress_loss}")
-    #     A_emb = self.AParmaModel(x, A, alpha)  # (T, batch_size, n)
-    #     # print(f"T_emb: {A_emb.shape}")
-    #     G = self.GParamModel(A_emb) # (T, batch_size, n*n)
-    #     # print(f"G: {G.shape}")
-        
-    #     skip_connection = self.cfg.get('skip_connection', False)
-    #     if skip_connection:
-    #         FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + U.transpose(0, 1)  # (T, batch_size, n)
-    #     else:
-    #         FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
-
-    #     out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
-       
-    #     if norms is not None:
-    #         out = norms['optimal_controls'].decode(out)
-    #         optimal_controls = norms['optimal_controls'].decode(optimal_controls)
-
-    #     label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
-    #     # print(f"label_loss: {label_loss}")
-    #     return out, self._get_loss(regress_loss, label_loss, self.cfg, logger), regress_loss, label_loss                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
-
-    # FNO baseline
-    def forward(self, batch, norms, logger):
-        x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
-        out = self.FNO(x.unsqueeze(1)).squeeze(1)
-        if norms is not None:
-            out = norms['optimal_controls'].decode(out)
-            optimal_controls = norms['optimal_controls'].decode(optimal_controls)
-        label_loss = self._get_label_loss(out, optimal_controls, self.cfg, logger)
-        return out, label_loss, label_loss, label_loss
-
-
     def forward(self, batch, norms, logger):
         x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
         # print('x: ', x.shape)
@@ -490,11 +427,11 @@ class CFNO(nn.Module):
         
         skip_connection = self.cfg.get('skip_connection', False)
         if skip_connection:
-            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + U.transpose(0, 1)  # (T, batch_size, n)
+            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + x.transpose(0, 1)  # (T, batch_size, n)
         else:
             FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
 
-        out = self.FNO(FNO_x.permute(1,0,2).unsqueeze(1)).squeeze(1)  # (batch_size, T, n)
+        out = self.FNO(FNO_x.permute(1,2,0)).permute(0, 2, 1)  # (batch_size, T, n)
        
         if norms is not None:
             out = norms['optimal_controls'].decode(out)
@@ -534,7 +471,6 @@ class baseFNO(nn.Module):
         )
         # self.FNO = FNO1d(modes=16, width=64)
       
-
     def _get_batch(self, batch):
         x = batch['input_x']
         U = batch['input_u']
