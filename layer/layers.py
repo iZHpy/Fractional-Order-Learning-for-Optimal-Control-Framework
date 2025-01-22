@@ -111,7 +111,7 @@ class LSTMGenerator(nn.Module):
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
-            batch_first=False,  # input_shape (batch_size, T, input_dim)
+            batch_first=False,  # input_shape (T, batch_size, input_dim)
             bidirectional=config['bidirectional']
         )
         # Fully connected layer
@@ -123,8 +123,8 @@ class LSTMGenerator(nn.Module):
 
     def forward(self, x):
         """
-        x: (batch_size, T, input_dim)
-        return: (batch_size, T, output_dim)
+        x: (T, batch_size, input_dim)
+        return: (T, batch_size, output_dim)
         """
         # LSTM forward
         output, (h_n, c_n) = self.lstm(x)  
@@ -237,55 +237,6 @@ class GRUGenerator(nn.Module):
             y = self.norm(y)
 
         return y
-    
-
-
-class AtoGTransformer(nn.Module):
-    """
-    input: (src_seq_len, batch_size, d_model)
-    output: (tgt_seq_len, batch_size, d_model)
-    """
-    def __init__(self, d_model, nhead=2, num_layers=2, dim_feedforward=128):
-        super().__init__()
-
-        self.d_model = d_model
-        # use nn.Linear to project the input to d_model
-        self.src_linear = nn.Linear(d_model, d_model)
-        self.tgt_linear = nn.Linear(d_model, d_model)
-
-        self.transformer = nn.Transformer(
-            d_model=d_model,
-            nhead=nhead,
-            num_encoder_layers=num_layers,
-            num_decoder_layers=num_layers,
-            dim_feedforward=dim_feedforward,
-            batch_first=False # input shape: (seq_len, batch_size, d_model)
-        )
-
-        self.output_linear = nn.Linear(d_model, d_model)
-
-    def forward(self, src, tgt):
-        """
-        src: [src_seq_len, batch_size, d_model]
-        tgt: [tgt_seq_len, batch_size, d_model]
-        returns: [tgt_seq_len, batch_size, d_model]
-        """
-
-        # project to d_model
-        src_embed = self.src_linear(src)  # (src_seq_len, batch_size, d_model)
-        tgt_embed = self.tgt_linear(tgt)
-
-        # transformer forward
-        out = self.transformer(
-            src_embed, tgt_embed
-            # src_key_padding_mask=None,
-            # tgt_key_padding_mask=None,
-            # memory_key_padding_mask=None
-        )
-        # out shape: (tgt_seq_len, batch_size, d_model)
-        out = self.output_linear(out)
-
-        return out
     
 
 class SpectralConv1d(nn.Module):

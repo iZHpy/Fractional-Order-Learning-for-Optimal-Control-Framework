@@ -53,7 +53,7 @@ identification_model_params:
   activation: 'ReLU'
   norm_type: 'LayerNorm'
   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
-  bidirectional: False
+  bidirectional: True
 
 
 # identification_model: 'MLP' # RNN LSTM GRU
@@ -97,6 +97,17 @@ GParam_model_params:
   norm_type: 'LayerNorm'
   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
   bidirectional: False
+
+# GParam_model:  Transformer
+# GParam_model_params:
+#   hidden_size: 64
+#   num_layers: 2
+#   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
+#   nhead: 4
+#   output_size: 5
+#   dropout_rate: 0
+#   activation: 'ReLU'
+#   seq2seq: False  # If True, the model is encoder-decoder, else it is encoder-only
 
 FINAL_model_params:
   QRB_size: 3

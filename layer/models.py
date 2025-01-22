@@ -6,7 +6,7 @@ from neuralop.models import FNO2d, FNO1d
 from layer.layers import ResidualMLPBlock
 from layer.layers import LSTMGenerator, RNNGenerator, GRUGenerator
 from utils.utils import LpLoss, UnitGaussianNormalizer
-
+from layer.seq2seq import A2GEncoder, G2OutDecoder
 
 class SEQParamRegressor(nn.Module):
     def __init__(self,
@@ -305,29 +305,32 @@ class GParamModel(nn.Module):
         self.n = n
         self.m = m
         self.T = T
-        model_type, hidden_size, num_layers, dropout_rate, norm_type, activation = self._get_config(config)
-        if model_type == 'RNN':
-            self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-        elif model_type == 'LSTM':
-            self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-        elif model_type == 'GRU':
-            self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-        elif model_type == 'Transformer':
-            logger.error(f"Model type {model_type} not implemented")
-            raise NotImplementedError(f"Model type {model_type} not implemented")
-        elif model_type == 'Formula':
-            logger.error(f"Model type {model_type} not implemented")
-            raise NotImplementedError(f"Model type {model_type} not implemented")
-    
+        model_type, hidden_size, num_layers, seq2seq, dropout_rate, norm_type, activation = self._get_config(config)
+        if seq2seq:
+            raise NotImplementedError("Seq2Seq model not implemented")
+        else:
+            if model_type == 'RNN':
+                self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            elif model_type == 'LSTM':
+                self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            elif model_type == 'GRU':
+                self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+            elif model_type == 'Transformer':
+                self.seq_model = A2GEncoder(model_type=model_type, d_in=input_dim, d_model=hidden_size, num_layers=num_layers, config=config['GParam_model_params'], seq2seq=seq2seq)
+            elif model_type == 'Formula':
+                logger.error(f"Model type {model_type} not implemented")
+                raise NotImplementedError(f"Model type {model_type} not implemented")
+        
         # self.seq_model 
     def _get_config(self, config):
         model_type = config['GParam_model']
         hidden_size = config['GParam_model_params'].get('hidden_size', 64)
         num_layers = config['GParam_model_params'].get('num_layers', 2)
+        seq2seq = config['GParam_model_params'].get('seq2seq', False)
         dropout_rate = config['GParam_model_params'].get('dropout_rate', 0.0)
         norm_type = config['GParam_model_params'].get('norm_type', None)
         activation = config['GParam_model_params'].get('activation', 'ReLU')
-        return model_type, hidden_size, num_layers, dropout_rate, norm_type, activation
+        return model_type, hidden_size, num_layers, seq2seq, dropout_rate, norm_type, activation
 
     def forward(self, x):
         """

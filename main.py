@@ -74,9 +74,20 @@ def test(model, test_loader, test_norms, device, logger):
 
 def metrics(ys_pred, ys_true, logger):
     mse = F.mse_loss(ys_pred, ys_true)
+    mae = F.l1_loss(ys_pred, ys_true)
     lploss = LpLoss()(ys_pred, ys_true)
     logger.info(f"MSE: {mse}")
+    logger.info(f"MAE: {mae}")
     logger.info(f"LpLoss: {lploss}")
+    if mse < best_metric[0]:
+        best_metric[0] = mse
+        best_epoch[0] = epoch
+    if mae < best_metric[1]:
+        best_metric[1] = mae
+        best_epoch[1] = epoch
+    if lploss < best_metric[2]:
+        best_metric[2] = lploss
+        best_epoch[2] = epoch
 
 if __name__ == "__main__":
     args = parse_args()
@@ -124,6 +135,9 @@ if __name__ == "__main__":
     logger.info(f"Optimizer: {optimizer}")
     logger.info(f"Scheduler: {scheduler}")
     
+
+    best_metric = [float('inf'), float('inf'), float('inf')]
+    best_epoch = [None, None, None]
     # Train the model
     logger.info("Training the model")
     epochs = config['epochs']
@@ -132,6 +146,9 @@ if __name__ == "__main__":
         loss = train(model, train_loader, train_norms, optimizer, device, logger)
         scheduler.step(loss)
         # Evaluate the model
-        test(model, test_loader, test_norms, device, logger)
-        
+        test_loss = test(model, test_loader, test_norms, device, logger)
+
+    logger.info(f"Best MSE: {best_metric[0]} at epoch {best_epoch[0]}")
+    logger.info(f"Best MAE: {best_metric[1]} at epoch {best_epoch[1]}")
+    logger.info(f"Best LpLoss: {best_metric[2]} at epoch {best_epoch[2]}")
     
