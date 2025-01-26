@@ -100,12 +100,10 @@ def get_optimizer(model, config, logger):
 class UnitGaussianNormalizer(object):
     def __init__(self, x, eps=0.00001):
         super(UnitGaussianNormalizer, self).__init__()
-
         # x could be in shape of ntrain*n or ntrain*T*n or ntrain*n*T
         self.mean = torch.mean(x, 0)
         self.std = torch.std(x, 0)
         self.eps = eps
-
     def encode(self, x):
         x = (x - self.mean) / (self.std + self.eps)
         return x
@@ -185,7 +183,7 @@ class RangeNormalizer(object):
         return x
     
 class LpLoss(object):
-    def __init__(self, d=2, p=2, size_average=True, reduction=True):
+    def __init__(self, d=2, p=2, size_average=True, reduction=True, epsilon=1e-6):
         super(LpLoss, self).__init__()
 
         #Dimension and Lp-norm type are postive
@@ -195,7 +193,9 @@ class LpLoss(object):
         self.p = p
         self.reduction = reduction
         self.size_average = size_average
+        self.epsilon = epsilon
 
+        
     def abs(self, x, y):
         num_examples = x.size()[0]
 
@@ -217,7 +217,7 @@ class LpLoss(object):
 
         diff_norms = torch.norm(x.reshape(num_examples,-1) - y.reshape(num_examples,-1), self.p, 1)
         y_norms = torch.norm(y.reshape(num_examples,-1), self.p, 1)
-
+        y_norms = torch.clamp(y_norms, min=self.epsilon)
         if self.reduction:
             if self.size_average:
                 return torch.mean(diff_norms/y_norms)

@@ -105,7 +105,7 @@ class LSTMGenerator(nn.Module):
         super(LSTMGenerator, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.seq2sqe = config['seq2seq']
+
         
         self.lstm = nn.LSTM(
             input_size=input_dim,
@@ -153,7 +153,6 @@ class RNNGenerator(nn.Module):
         super(RNNGenerator, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.seq2sqe = config['seq2seq']
         
         self.rnn = nn.RNN(
             input_size=input_dim,
@@ -202,7 +201,6 @@ class GRUGenerator(nn.Module):
         super(GRUGenerator, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.seq2sqe = config['seq2seq']
         
         self.gru = nn.GRU(
             input_size=input_dim,

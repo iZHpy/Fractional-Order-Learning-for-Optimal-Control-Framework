@@ -6,7 +6,7 @@ from neuralop.models import FNO2d, FNO1d
 from layer.layers import ResidualMLPBlock
 from layer.layers import LSTMGenerator, RNNGenerator, GRUGenerator
 from utils.utils import LpLoss, UnitGaussianNormalizer
-from layer.seq2seq import A2GEncoder, G2OutDecoder
+from layer.seq2seq import A2GEncoder, G2OutDecoder, A2G2OutSeq2Seq
 
 class SEQParamRegressor(nn.Module):
     def __init__(self,
@@ -16,11 +16,16 @@ class SEQParamRegressor(nn.Module):
         self.n = n
         self.m = m
         self.T = T
+        self.cfg = config
         model_type, hidden_size, num_layers, dropout_rate, norm_type, activation, bidirectional = self._get_config(config)
         self.bidirectional = bidirectional
+        if config['use_U']:
+            in_d = n + m
+        else:
+            in_d = n
         if model_type == 'RNN':
             self.seq = nn.RNN(
-                input_size=self.n, 
+                input_size=in_d, 
                 hidden_size=hidden_size,
                 num_layers=num_layers,
                 batch_first=True,         # (batch, seq_len, input_size)
@@ -28,7 +33,7 @@ class SEQParamRegressor(nn.Module):
         )
         elif model_type == 'LSTM':
             self.seq = nn.LSTM(
-                input_size=self.n,
+                input_size=in_d,
                 hidden_size=hidden_size,
                 num_layers=num_layers,
                 batch_first=True,
@@ -36,20 +41,36 @@ class SEQParamRegressor(nn.Module):
             )
         elif model_type == 'GRU':
             self.seq = nn.GRU(
-                input_size=self.n,
+                input_size=in_d,
                 hidden_size=hidden_size,
                 num_layers=num_layers,
                 batch_first=True,
                 bidirectional=bidirectional
             )
-        pre_dim = hidden_size*2 if bidirectional else hidden_size
+        prev_dim = hidden_size*2 if bidirectional else hidden_size
         output_dim = self.n*self.n + self.n*self.m + self.n
-        self.fc = nn.Linear(pre_dim, output_dim)
-        self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
-        self.dropout = nn.Dropout(dropout_rate)
-        self.norm_type = norm_type
-        self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
-
+        # self.fc = nn.Linear(prev_dim, output_dim)
+        # self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
+        # self.dropout = nn.Dropout(dropout_rate)
+        # self.norm = [nn.BatchNorm1d(output_dim), nn.LayerNorm(output_dim)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
+    
+        blocks = []
+        block_layers = config['identification_model_params']['block_layers']
+        use_residual = config['identification_model_params']['use_residual']
+        for i in range(len(block_layers)):
+            block = ResidualMLPBlock(
+                in_dim=prev_dim,
+                hidden_dims=block_layers[i] * [prev_dim],
+                num_layers=block_layers[i],
+                dropout_rate=dropout_rate,
+                norm_type=norm_type,
+                activation=activation,
+                use_residual=use_residual  
+            )
+            blocks.append(block)
+        self.blocks = nn.Sequential(*blocks)
+        self.fc = nn.Linear(prev_dim, output_dim)
+ 
     def forward(self, x, U):
         """
         x: (batch_size, T, n)
@@ -58,7 +79,8 @@ class SEQParamRegressor(nn.Module):
         """
         x = x.view(x.size(0), -1, self.n)
         U = U.view(U.size(0), -1, self.m)
-        # x = torch.cat([x, U], dim=2)  # (batch_size, T, n+m)
+        if self.cfg['use_U']:
+            x = torch.cat([x, U], dim=2)  # (batch_size, T, n+m)
         if self.seq.__class__.__name__ == 'LSTM':
             x, (h, c) = self.seq(x) # x: (batch_size, T, hidden_size), h: (num_layers, batch_size, hidden_size)
         else:
@@ -69,8 +91,12 @@ class SEQParamRegressor(nn.Module):
             hn = torch.cat([forward_hn, backward_hn], dim=1)
         else:
             hn = h[-1]
-        hn = self.dropout(self.act(self.fc(hn)))
-        hn = self.norm(hn)
+        hn = self.blocks(hn)
+        hn = self.fc(hn)
+        # hn = self.act(self.fc(hn))
+        # hn = self.dropout(hn)
+        # hn = self.norm(hn)
+    
         nn_ = self.n*self.n
         nm_ = self.n*self.m
         A_flat = hn[:, :nn_]
@@ -306,27 +332,25 @@ class GParamModel(nn.Module):
         self.m = m
         self.T = T
         model_type, hidden_size, num_layers, seq2seq, dropout_rate, norm_type, activation = self._get_config(config)
-        if seq2seq:
-            raise NotImplementedError("Seq2Seq model not implemented")
-        else:
-            if model_type == 'RNN':
-                self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-            elif model_type == 'LSTM':
-                self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-            elif model_type == 'GRU':
-                self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
-            elif model_type == 'Transformer':
-                self.seq_model = A2GEncoder(model_type=model_type, d_in=input_dim, d_model=hidden_size, num_layers=num_layers, config=config['GParam_model_params'], seq2seq=seq2seq)
-            elif model_type == 'Formula':
-                logger.error(f"Model type {model_type} not implemented")
-                raise NotImplementedError(f"Model type {model_type} not implemented")
-        
+       
+        if model_type == 'LSTM':
+            self.seq_model = LSTMGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+        elif model_type == 'RNN':
+            self.seq_model = RNNGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+        elif model_type == 'GRU':
+            self.seq_model = GRUGenerator(input_dim=input_dim, hidden_dim=hidden_size, num_layers=num_layers, output_dim=n, dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, config=config['GParam_model_params'])
+        elif model_type == 'Transformer':
+            self.seq_model = A2GEncoder(model_type=model_type, d_in=input_dim, d_model=hidden_size, num_layers=num_layers, config=config['GParam_model_params'], seq2seq=seq2seq)
+        elif model_type == 'Formula':
+            logger.error(f"Model type {model_type} not implemented")
+            raise NotImplementedError(f"Model type {model_type} not implemented")
+    
         # self.seq_model 
     def _get_config(self, config):
         model_type = config['GParam_model']
         hidden_size = config['GParam_model_params'].get('hidden_size', 64)
         num_layers = config['GParam_model_params'].get('num_layers', 2)
-        seq2seq = config['GParam_model_params'].get('seq2seq', False)
+        seq2seq = config['seq2seq']
         dropout_rate = config['GParam_model_params'].get('dropout_rate', 0.0)
         norm_type = config['GParam_model_params'].get('norm_type', None)
         activation = config['GParam_model_params'].get('activation', 'ReLU')
@@ -354,10 +378,19 @@ class FinalTrans(nn.Module):
         self.fc_LQR_Q = nn.Linear(n*n, hidden_size)
         self.fc_LQR_R = nn.Linear(m*m, hidden_size)
         self.fc = nn.Linear(hidden_size*3, QRB_size)
+        self.fc_x = ResidualMLPBlock(in_dim = n, hidden_dims=[config['FINAL_model_params']['hidden_size_X']]*config['FINAL_model_params']['num_layers_X'], num_layers=config['FINAL_model_params']['num_layers_X'], dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, use_residual=config['FINAL_model_params']['use_residual'])
+        self.out_x = nn.Linear(config['FINAL_model_params']['hidden_size_X'], config['FINAL_model_params']['output_size_X'])
+        self.fc_G = ResidualMLPBlock(in_dim = config['GParam_model_params']['output_size'], hidden_dims=[config['FINAL_model_params']['hidden_size_G']]*config['FINAL_model_params']['num_layers_G'], num_layers=config['FINAL_model_params']['num_layers_G'], dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, use_residual=config['FINAL_model_params']['use_residual'])
+        self.out_G = nn.Linear(config['FINAL_model_params']['hidden_size_G'], config['FINAL_model_params']['output_size_G'])
+        self.fc_U = ResidualMLPBlock(in_dim = m, hidden_dims=[config['FINAL_model_params']['hidden_size_U']]*config['FINAL_model_params']['num_layers_U'], num_layers=config['FINAL_model_params']['num_layers_U'], dropout_rate=dropout_rate, norm_type=norm_type, activation=activation, use_residual=config['FINAL_model_params']['use_residual'])
+        self.out_U = nn.Linear(config['FINAL_model_params']['hidden_size_U'], config['FINAL_model_params']['output_size_U'])
         self.act = [nn.ReLU(), nn.GELU(), nn.Tanh(), nn.Sigmoid()][['ReLU', 'GELU',  'Tanh', 'Sigmoid'].index(activation)]
         self.dropout = nn.Dropout(dropout_rate)
         self.norm = [nn.BatchNorm1d(QRB_size), nn.LayerNorm(QRB_size)][['BatchNorm', 'LayerNorm'].index(norm_type)] if norm_type is not None else nn.Identity()
-    
+        self.fc_out = nn.Linear(18, 5)
+
+
+
     def _get_config(self, config):
         hidden_size = config['FINAL_model_params'].get('hidden_size', 64)
         dropout_rate = config['FINAL_model_params'].get('dropout_rate', 0.0)
@@ -366,10 +399,10 @@ class FinalTrans(nn.Module):
         QRB_size = config['FINAL_model_params'].get('QRB_size', 3)
         return QRB_size, hidden_size, dropout_rate, norm_type, activation
         
-    def forward(self, B, G, LQR_Q, LQR_R, x):
+    def forward(self, B, G, LQR_Q, LQR_R, x, U):
         """
         B: (batch_size, n*m)
-        G: (T, batch_size, n*n)
+        G: (T, batch_size, n)
         LQR_Q: (batch_size, n*n)
         LQR_R: (batch_size, m*m)
         x: (batch_size, T, n)
@@ -382,8 +415,17 @@ class FinalTrans(nn.Module):
         emb = self.act(self.fc(emb)) # (T, batch_size, qrb_size)
         emb = self.dropout(emb)
         out = self.norm(emb) # (T, batch_size, 5)
-        out = torch.cat([out, x.permute(1,0,2), G], dim=2)
-
+        x = self.fc_x(x.permute(1,0,2)) # (T, batch_size, n)
+        x = self.out_x(x)
+        G = self.fc_G(G) # (T, batch_size, n)
+        G = self.out_G(G)
+        U = self.fc_U(U.permute(1,0,2)) # (T, batch_size, m)
+        U = self.out_U(U)
+        if self.cfg.get('use_U', False):
+            out = torch.cat([out, x, G, U], dim=2)
+        else:
+            out = torch.cat([out, x, G], dim=2)
+        out = self.fc_out(out) # (T, batch_size, n)
         return out
         
 
@@ -394,6 +436,7 @@ class CFNO(nn.Module):
                  config, logger
                  ):
         super().__init__()
+        self.training = True
         self.n = n
         self.m = m
         self.T = T
@@ -412,10 +455,17 @@ class CFNO(nn.Module):
             self.AParmaModel = A_ParamMLP(n, T, config)
 
         input_dim = config['AParam_model_params'].get('output_size', n)
-        self.GParamModel = GParamModel(n, m, T, input_dim, config, logger)
+        if config['seq2seq']:
+            self.GParamModel = A2G2OutSeq2Seq(config=config['Seq2Seq_model_params'], d_in=input_dim, d_out=m, d_model=config['Seq2Seq_model_params']['hidden_size'], num_layers=config['Seq2Seq_model_params']['num_layers'], model_type=config['Seq2Seq_model'])
+        else:
+            self.GParamModel = GParamModel(n, m, T, input_dim, config, logger)
         self.FinalTrans = FinalTrans(n, m, T, config, logger)
+        FNO_out_size = config['FINAL_model_params']['output_size_X']+ config['FINAL_model_params']['output_size_G']+ config['FINAL_model_params']['QRB_size']
+        if config['use_U']:
+            FNO_out_size += config['FINAL_model_params']['output_size_U']
+
         self.FNO = FNO1d(
-            in_channels=13,
+            in_channels=5, #FNO_out_size,
             out_channels=self.m,
             n_modes_height=16,
             hidden_channels=64
@@ -443,11 +493,10 @@ class CFNO(nn.Module):
             logger.error(f"Loss type {loss_type} not implemented")
             raise NotImplementedError(f"Loss type {loss_type} not implemented")
         A_true = A_true.view(A.shape[0], -1)
-        B_true = B_true.view(B.shape[0], -1)        
+        B_true = B_true.view(B.shape[0], -1)     
         loss_A = criterion(A, A_true)
         loss_B = criterion(B, B_true)
         loss_alpha = criterion(alpha, alpha_true)
-
         reduction = config['loss_params']['regression_loss'].get('reduction', 'sum')
         if reduction == 'mean':
             return torch.mean(torch.stack([loss_A, loss_B, loss_alpha]))
@@ -484,27 +533,23 @@ class CFNO(nn.Module):
 
     def forward(self, batch, norms, logger):
         x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
-        # print('x: ', x.shape)
-        # print('LQR_Q: ', LQR_Q.shape)
-        # print('LAR_R: ', LQR_R.shape)
-        # print('optimal_controls: ', optimal_controls.shape)
         A, B, alpha = self.param_regressor(x, U)
         # A ,B and alpha loss
         regress_loss = self._get_regress_loss(A, B, alpha, A_true, B_true, alpha_true, self.cfg, logger)
-        # print(f"regress_loss: {regress_loss}")
+
         A_emb = self.AParmaModel(x, A, alpha)  # (T, batch_size, n)
         # print(f"T_emb: {A_emb.shape}")
-        G = self.GParamModel(A_emb) # (T, batch_size, n*n)
-        # print(f"G: {G.shape}")
-        
-        skip_connection = self.cfg.get('skip_connection', False)
-        if skip_connection:
-            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x) + x.transpose(0, 1)  # (T, batch_size, n)
+        if self.cfg['seq2seq']:
+            if self.training:
+                G = self.GParamModel(A_emb, optimal_controls.permute(1,0,2))  # (T, batch_size, n)
+            else:
+                G = self.GParamModel.generate(A_emb, A_emb.size(0), d_out=self.n)  # (T, batch_size, n)
         else:
-            FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x)
-
+            G = self.GParamModel(A_emb) # (T, batch_size, n)
+        FNO_x = self.FinalTrans(B, G, LQR_Q, LQR_R, x, U)  # (T, batch_size, n)
+        FNO_x = nn.Tanh()(FNO_x)
         out = self.FNO(FNO_x.permute(1,2,0)).permute(0, 2, 1)  # (batch_size, T, n)
-       
+    
         if norms is not None:
             out = norms['optimal_controls'].decode(out)
             optimal_controls = norms['optimal_controls'].decode(optimal_controls)
@@ -536,8 +581,8 @@ class baseFNO(nn.Module):
         self.dropout = nn.Dropout(0.2)
         self.norm = nn.LayerNorm(2)
         self.FNO = FNO1d(
-            in_channels=7,
-            out_channels=5,
+            in_channels=2,
+            out_channels=self.m,
             n_modes_height=16,
             hidden_channels=64
         )
@@ -605,17 +650,17 @@ class baseFNO(nn.Module):
     # FNO baseline
     def forward(self, batch, norms, logger):
         x, U, A_true, B_true, alpha_true, LQR_Q, LQR_R, optimal_controls = self._get_batch(batch)
-        emb1 = self.act(self.fc1(LQR_Q.view(-1, self.n*self.n))) # q (batch_size, 25), (batch_size, 64) 
-        emb2 = self.act(self.fc2(LQR_R.view(-1, self.m*self.m))) # r (batch_size, 25), (batch_size, 64)
-        emb = torch.cat([emb1, emb2], dim=1).unsqueeze(1).repeat(1, self.T, 1) # (batch_size, T, 128)
-        emb = self.act(self.fc3(emb)) # (batch_size, T, 2)
-        emb = self.dropout(emb)
-        out = self.norm(emb) # (batch_size, T, 5)
-        out = torch.cat([out, x], dim=2)
-
-
+        out = x
+        # emb1 = self.act(self.fc1(LQR_Q.view(-1, self.n*self.n))) # q (batch_size, 25), (batch_size, 64) 
+        # emb2 = self.act(self.fc2(LQR_R.view(-1, self.m*self.m))) # r (batch_size, 25), (batch_size, 64)
+        # emb = torch.cat([emb1, emb2], dim=1).unsqueeze(1).repeat(1, self.T, 1) # (batch_size, T, 128)
+        # emb = self.act(self.fc3(emb)) # (batch_size, T, 2)
+        # emb = self.dropout(emb)
+        # out = self.norm(emb) # (batch_size, T, 5)
+        # out = torch.cat([out, x], dim=2)
+  
         # out = self.FNO(out)
-        out = self.FNO(out.permute(0,2,1)).permute(0,2,1)
+        out = self.FNO(out.permute(0, 2, 1)).permute(0, 2, 1) # (batch_size, T, n)   
         if norms is not None:
             out = norms['optimal_controls'].decode(out)
             optimal_controls = norms['optimal_controls'].decode(optimal_controls)

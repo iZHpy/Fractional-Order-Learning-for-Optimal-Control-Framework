@@ -120,8 +120,8 @@ if __name__ == "__main__":
     n = train_dataset.n
     T = train_dataset.T
 
-    # model = baseFNO(n, m, T, config, logger).to(device)
     model = CFNO(n, m, T, config, logger).to(device)
+    # model = baseFNO(n, m, T, config, logger).to(device)
     if train_norms is not None:
         train_norms['optimal_controls'].cuda(device)
     if test_norms is not None:

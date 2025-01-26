@@ -26,7 +26,6 @@ class FractionalOrderDataset(Dataset):
             self.data['A'] = self._duplicate_and_stack(self.data['A'], self.len)
             self.data['B'] = self._duplicate_and_stack(self.data['B'], self.len)
             self.data['alphas'] = self._duplicate_and_stack(self.data['alphas'], self.len)
-
         # output (batch_size, t, dim)
         # x (batch_size, t', dim)
 
@@ -42,9 +41,14 @@ class FractionalOrderDataset(Dataset):
     def _normalize_data(self):
         norms = {}
         for key in self.data:
+            if key in ['alphas', 'A', 'B']:
+                continue
             norms[key] = UnitGaussianNormalizer(self.data[key])
             self.data[key] = norms[key].encode(self.data[key])
         self.norms = norms
+        # A B alphas (0000)
+        # (batch, 2, 2)
+        # (batch, T , 2, 2)
 
     def __len__(self):
         return self.len
@@ -66,6 +70,9 @@ def load_data_from_npy(data_dir):
     optimal_controls = np.load(f'{data_dir}/optimal_control_U.npy')
     A = np.load(f'{data_dir}/system_matrix_A.npy')
     B = np.load(f'{data_dir}/system_matrix_B.npy')
+    # A = np.repeat(A, 1000, axis=0)
+    # B = np.repeat(B, 1000, axis=0)
+    # alphas = np.repeat(alphas, 5000, axis=0).reshape(-1, A.shape[1])
     print('álphas shape:', alphas.shape)
     print('input_u shape:', input_u.shape)
     print('x shape:', x.shape)

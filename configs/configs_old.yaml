@@ -3,7 +3,7 @@ device: 'cuda:0'
 epochs: 200
 wandb: False
 # data_dir: './data/AB_SAME'
-data_dir: './data/same_sys_no_noise'
+data_dir: './data/same_sys_no_noise/'
 x_mode: All # Initial
 batch_size: 128
 test_size: 0.2
@@ -50,6 +50,27 @@ identification_model_params:
   use_residual: False
 
 
+# identification_model: 'MLP' # RNN LSTM GRU
+# identification_model_params:
+#   num_blocks: 2
+#   block_layers: [2, 2]
+#   hidden_size: [[64, 128],[128, 128]]
+#   dropout_rate: 0
+#   activation: 'ReLU'
+#   norm_type: 'BatchNorm'
+#   use_residual: False
+
+# AParam_model: 'MLP'
+# AParam_model_params:
+#   num_blocks: 2
+#   block_layers: [2, 2]
+#   hidden_size: [[64, 128],[128, 128]]
+#   output_size: 5
+#   dropout_rate: 0.2
+#   activation: 'ReLU'
+#   norm_type: 'BatchNorm'
+#   use_residual: False
+
 AParam_model: 'Embedding'
 AParam_model_params:
   hidden_size: 64
@@ -79,6 +100,17 @@ GParam_model_params:
   activation: 'ReLU'
 
 
+# Seq2Seq_model: Transformer
+# Seq2Seq_model_params:
+#   nhead: 4
+#   hidden_size: 64
+#   num_layers: 4
+#   dropout_rate: 0
+#   activation: 'ReLU'
+#   norm_type: 'LayerNorm'
+#   bidirectional: False
+
+  
 FINAL_model_params:
   QRB_size: 3
   hidden_size: 64
