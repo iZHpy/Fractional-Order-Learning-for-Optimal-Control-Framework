@@ -47,7 +47,7 @@ identification_model_params:
   activation: 'ReLU'
   norm_type: 'LayerNorm'
   bidirectional: True
-  block_layers: [2,2]
+  block_layers: [1]
   mlp_hidden_size: 128
   use_residual: True
 
@@ -55,11 +55,11 @@ identification_model_params:
 AParam_model: 'Embedding'
 AParam_model_params:
   hidden_size: 64
-  output_size: 64
+  output_size: 5
   dropout_rate: 0.1
   activation: 'ReLU'
   norm_type: 'LayerNorm'
-  block_layers: [2,2]
+  block_layers: [1]
   mlp_hidden_size: 64
   use_residual: True
   use_x: False
@@ -72,14 +72,14 @@ AParam_model_params:
 #   activation: 'ReLU'
 #   norm_type: 'LayerNorm'
 #   bidirectional: False
-#   output_size: 64
+#   output_size: 5
 
 GParam_model:  Transformer
 GParam_model_params:
   hidden_size: 64
   num_layers: 4
   nhead: 4
-  output_size: 64
+  output_size: 5
   dropout_rate: 0
   activation: 'ReLU'
 
