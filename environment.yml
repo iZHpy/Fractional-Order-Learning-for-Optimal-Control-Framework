@@ -1,4 +1,4 @@
-name: cfno
+name: FOLOC
 channels:
   - defaults
 dependencies:
