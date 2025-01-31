@@ -1,0 +1,110 @@
+seed: 42
+device: 'cuda:0'
+epochs: 300
+wandb: False
+# data_dir: './data/AB_SAME'
+# data_dir: './data/var_alphas/0.1'
+data_dir: './data/var_alphas/0.3'
+x_mode: All # Initial
+batch_size: 128
+test_size: 0.2
+normalize: True
+use_U: True
+same_system: True
+seq2seq: False # If True, the model is encoder-decoder, else it is encoder-only
+
+loss_params:
+  regression_loss: 
+    loss: 'Lploss'
+    reduction: 'sum'
+  label_loss:
+    loss: 'Lploss'
+    weight: 0.9
+  reduction: 'mean'
+
+
+optimizer: 'Adam'
+optimizer_params:
+  lr: 0.001
+  weight_decay: 0.0001
+
+scheduler: 'ReduceLROnPlateau'
+scheduler_params:
+  mode: 'min'
+  factor: 0.1
+  patience: 5
+  threshold: 0.0001
+  threshold_mode: 'rel'
+  cooldown: 0
+  min_lr: 0
+  eps: 1e-08
+
+identification_model: LSTM # GRU, RNN, Transformer
+identification_model_params:
+  hidden_size: 64
+  num_layers: 2
+  dropout_rate: 0
+  activation: 'ReLU'
+  norm_type: 'LayerNorm'
+  bidirectional: True
+  block_layers: [2,2]
+  mlp_hidden_size: 128
+  use_residual: True
+
+
+AParam_model: 'Embedding'
+AParam_model_params:
+  hidden_size: 64
+  output_size: 64
+  dropout_rate: 0.1
+  activation: 'ReLU'
+  norm_type: 'LayerNorm'
+  block_layers: [2,2]
+  mlp_hidden_size: 64
+  use_residual: True
+  use_x: False
+
+# GParam_model:  LSTM # GRU, RNN, Transformer
+# GParam_model_params:
+#   hidden_size: 64
+#   num_layers: 2
+#   dropout_rate: 0
+#   activation: 'ReLU'
+#   norm_type: 'LayerNorm'
+#   bidirectional: False
+#   output_size: 64
+
+GParam_model:  Transformer
+GParam_model_params:
+  hidden_size: 64
+  num_layers: 4
+  nhead: 4
+  output_size: 64
+  dropout_rate: 0
+  activation: 'ReLU'
+
+
+FINAL_model_params:
+  QRB_size: 3
+  hidden_size: 64
+  dropout_rate: 0
+  activation: 'ReLU'
+  norm_type: 'LayerNorm'
+  output_size_X: 5
+  num_layers_X: 1
+  hidden_size_X: 64
+  output_size_U: 5
+  num_layers_U: 1
+  hidden_size_U: 64
+  output_size_G: 5
+  num_layers_G: 1
+  hidden_size_G: 64
+
+  block_layers: []
+  mlp_hidden_size: 64
+  use_residual: True
+  output_size: 16
+
+  
+  
+

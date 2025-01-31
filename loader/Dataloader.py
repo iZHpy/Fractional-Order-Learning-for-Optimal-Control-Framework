@@ -63,16 +63,15 @@ class FractionalOrderDataset(Dataset):
     
 def load_data_from_npy(data_dir):
     alphas = np.load(f'{data_dir}/fractional_orders_alpha.npy')
+    A = np.load(f'{data_dir}/system_matrix_A.npy')
+    B = np.load(f'{data_dir}/system_matrix_B.npy')
+
     input_u = np.load(f'{data_dir}/fractional_system_inputs.npy')
     x = np.load(f'{data_dir}/fractional_system_trajectories.npy')
     LQR_Q = np.load(f'{data_dir}/LQR_Q.npy')
     LQR_R = np.load(f'{data_dir}/LQR_R.npy')
     optimal_controls = np.load(f'{data_dir}/optimal_control_U.npy')
-    A = np.load(f'{data_dir}/system_matrix_A.npy')
-    B = np.load(f'{data_dir}/system_matrix_B.npy')
-    # A = np.repeat(A, 1000, axis=0)
-    # B = np.repeat(B, 1000, axis=0)
-    # alphas = np.repeat(alphas, 5000, axis=0).reshape(-1, A.shape[1])
+
     print('álphas shape:', alphas.shape)
     print('input_u shape:', input_u.shape)
     print('x shape:', x.shape)
@@ -92,9 +91,15 @@ def load_split_data(config):
     normalize = config['normalize']
     alphas, inputs, x, LQR_Q, LQR_R, optimal_controls, A, B = load_data_from_npy(data_dir)
     train_indices, test_indices = train_test_split(np.arange(inputs.shape[0]), test_size=test_size, random_state=random_state)
-    
-    train_dataset = FractionalOrderDataset(alphas, inputs[train_indices], x[train_indices], LQR_Q[train_indices], LQR_R[train_indices], optimal_controls[train_indices], A, B, config, normalize=normalize)
-    test_dataset = FractionalOrderDataset(alphas, inputs[test_indices], x[test_indices], LQR_Q[test_indices], LQR_R[test_indices], optimal_controls[test_indices], A, B, config, normalize=normalize)
+    # train_indices = np.arange(8000)
+    # test_indices = np.arange(8000, 9000)
+
+    if config['same_system'] == True:
+        train_dataset = FractionalOrderDataset(alphas, inputs[train_indices], x[train_indices], LQR_Q[train_indices], LQR_R[train_indices], optimal_controls[train_indices], A, B, config, normalize=normalize)
+        test_dataset = FractionalOrderDataset(alphas, inputs[test_indices], x[test_indices], LQR_Q[test_indices], LQR_R[test_indices], optimal_controls[test_indices], A, B, config, normalize=normalize)
+    else:
+        train_dataset = FractionalOrderDataset(alphas[train_indices], inputs[train_indices], x[train_indices], LQR_Q[train_indices], LQR_R[train_indices], optimal_controls[train_indices], A[train_indices], B[train_indices], config, normalize=normalize)
+        test_dataset = FractionalOrderDataset(alphas[test_indices], inputs[test_indices], x[test_indices], LQR_Q[test_indices], LQR_R[test_indices], optimal_controls[test_indices], A[test_indices], B[test_indices], config, normalize=normalize)
     train_norms = train_dataset.norms
     test_norms = test_dataset.norms
 

@@ -91,12 +91,11 @@ def metrics(ys_pred, ys_true, logger):
 
 if __name__ == "__main__":
     args = parse_args()
-    set_seed(42)
     # Load configs, initialize logging, and set seed
     configs = load_configs(file_path=args.config)
     seed = configs.get('seed', 42)
     set_seed(seed)
-    logger = initialize_logging(file_dir="./logs")
+    logger = initialize_logging(file_dir=args.logs)
     logger.info(f"Loaded configs from: {args.config}")
     logger.info(f"Seed: {seed}")
     logger.info(f"Configs: {configs}")

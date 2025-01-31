@@ -1,10 +1,8 @@
 seed: 42
 device: 'cuda:0'
-epochs: 200
+epochs: 300
 wandb: False
-# data_dir: './data/AB_SAME'
-# data_dir: './data/var_alphas/0.1'
-data_dir: './data/same_sys_no_noise'
+data_dir: './data/data_10000'
 x_mode: All # Initial
 batch_size: 128
 test_size: 0.2
@@ -19,7 +17,7 @@ loss_params:
     reduction: 'sum'
   label_loss:
     loss: 'Lploss'
-    weight: 0.9
+    weight: 1
   reduction: 'mean'
 
 

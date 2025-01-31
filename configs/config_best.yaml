@@ -39,7 +39,7 @@ scheduler_params:
   min_lr: 0
   eps: 1e-08
 
-identification_model: LSTM # GRU, RNN, Transformer
+identification_model: LSTM # GRU, RNN
 identification_model_params:
   hidden_size: 64
   num_layers: 2
@@ -55,7 +55,7 @@ identification_model_params:
 AParam_model: 'Embedding'
 AParam_model_params:
   hidden_size: 64
-  output_size: 5
+  output_size: 64
   dropout_rate: 0.1
   activation: 'ReLU'
   norm_type: 'LayerNorm'
@@ -79,7 +79,7 @@ GParam_model_params:
   hidden_size: 64
   num_layers: 4
   nhead: 4
-  output_size: 5
+  output_size: 64
   dropout_rate: 0
   activation: 'ReLU'
 
