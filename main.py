@@ -10,7 +10,8 @@ import wandb
 import argparse
 from loader.Dataloader import load_data_from_npy, load_split_data
 from torch.utils.data import DataLoader
-from layer.models import CFNO, baseFNO
+from layer.models import CFNO
+from layer.baseFNO import baseFNO
 from utils.utils import LpLoss, UnitGaussianNormalizer
 
 
@@ -95,7 +96,7 @@ if __name__ == "__main__":
     configs = load_configs(file_path=args.config)
     seed = configs.get('seed', 42)
     set_seed(seed)
-    logger = initialize_logging(file_dir=args.logs)
+    logger = initialize_logging(file_dir='./logs/')
     logger.info(f"Loaded configs from: {args.config}")
     logger.info(f"Seed: {seed}")
     logger.info(f"Configs: {configs}")
