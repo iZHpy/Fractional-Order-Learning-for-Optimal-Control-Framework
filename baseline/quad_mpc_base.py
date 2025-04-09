@@ -81,9 +81,6 @@ def q_to_rot_mat(q):
 def skew_symmetric(v):
     """
     Computes the skew-symmetric matrix of a 3D vector (PAMPC version)
-
-    :param v: 3D numpy vector or CasADi MX
-    :return: the corresponding skew-symmetric matrix of v with the same data type as v
     """
 
     if isinstance(v, np.ndarray):
@@ -130,15 +127,6 @@ R_matrices = np.load(os.path.join(dir_path, 'LQR_R.npy'))
 def horizon_cost(u, initial_state, Q, R, params, dt, time_horizon):
     """
     Compute the cost over the entire time horizon for MPC.
-
-    :param u: Control inputs for the entire horizon (1D array, shape: time_horizon)
-    :param initial_state: Initial state of the system (shape: 13)
-    :param Q: State cost matrix (shape: 13x13)
-    :param R: Control cost matrix (shape: 4x4)
-    :param params: Quadrotor parameters
-    :param dt: Time step
-    :param time_horizon: Total number of time steps
-    :return: Scalar cost value
     """
     quad = Quadrotor(params)
     quad_dyn = quad.quad_dynamics()
@@ -166,15 +154,6 @@ def horizon_cost(u, initial_state, Q, R, params, dt, time_horizon):
 def solve_mpc_full_horizon(initial_state, Q, R, time_horizon, params, dt, u_bounds=(-10, 10)):
     """
     Solve the MPC problem for the full time horizon.
-
-    :param initial_state: Initial state (13-dimensional vector)
-    :param Q: State cost matrix (13x13)
-    :param R: Control cost matrix (4x4)
-    :param time_horizon: Total number of time steps
-    :param params: Quadrotor parameters
-    :param dt: Time step
-    :param u_bounds: Bounds on control inputs
-    :return: Optimal control inputs (shape: (time_horizon * 4,))
     """
     u0 = np.zeros(time_horizon * 4)  # Initial guess for control sequence
     bounds = [u_bounds] * (time_horizon * 4)  # Bounds for all control inputs
@@ -187,15 +166,6 @@ def solve_mpc_full_horizon(initial_state, Q, R, time_horizon, params, dt, u_boun
 def solve_mpc_finite_horizon(initial_state, Q, R, horizon_length, params, dt, u_bounds=(-10, 10)):
     """
     Solve the finite-horizon MPC problem over the prediction horizon and return the first control input.
-
-    :param initial_state: Initial state (13-dimensional vector)
-    :param Q: State cost matrix (13x13)
-    :param R: Control cost matrix (4x4)
-    :param horizon_length: Prediction horizon (number of time steps)
-    :param params: Quadrotor parameters
-    :param dt: Time step
-    :param u_bounds: Bounds on control inputs (tuple, default=(-10,10))
-    :return: The first optimal control input (4-dimensional vector)
     """
     # Initial guess for control sequence: horizon_length steps * 4 inputs per step
     u0 = np.zeros(horizon_length * 4)
@@ -214,17 +184,6 @@ def solve_mpc_finite_horizon(initial_state, Q, R, horizon_length, params, dt, u_
 def run_mpc(initial_state, Q, R, horizon_length, params, dt, total_steps,  u_bounds=(-10, 10)):
     """
     Run the MPC in a receding horizon fashion over the total simulation steps.
-    
-    :param initial_state: Initial state (13-dimensional vector)
-    :param Q: State cost matrix (13x13)
-    :param R: Control cost matrix (4x4)
-    :param horizon_length: Prediction horizon for MPC (number of time steps)
-    :param params: Quadrotor parameters
-    :param dt: Time step
-    :param total_steps: Total number of simulation steps
-    :return: Tuple (trajectory, control_history) where:
-             - trajectory is a list of states over time
-             - control_history is a list of applied control inputs
     """
     state = initial_state.copy()
     trajectory = [state]

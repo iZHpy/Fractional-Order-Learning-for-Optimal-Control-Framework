@@ -36,14 +36,14 @@ class A2GEncoder(nn.Module):
             G = self.encoder(A)   # treat as "encoder output"
         return G
 
-# 2) G->out Decoder (示例: TransformerDecoder + Any Decoder)
+# 2) G->out Decoder (Example: TransformerDecoder + Any Decoder)
 class G2OutDecoder(nn.Module):
     def __init__(self, model_type='Transformer', d_model=64, d_out=5, num_layers=2, config=None):
         super().__init__()
         self.d_model = d_model
         layers = []
-        # 如果目标 out 是离散 token，这里可以 Embedding
-        # 也可以直接把"tgt序列"以embedding形式输入
+        # if target out is discrete token, here can be Embedding
+        # or directly input "tgt sequence" in embedding form
         if model_type == 'RNN':
             layers.append(nn.RNN(d_model, d_model, num_layers=num_layers, batch_first=False, bidirectional=config['bidirectional']))
         elif model_type == 'LSTM':
@@ -55,29 +55,29 @@ class G2OutDecoder(nn.Module):
             decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=config['nhead'])
             self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
         
-        # 最后映射到 vocab_size (若是字符/词预测)
+        # Last, map to vocab_size (if discrete token prediction)
         self.fc_out = nn.Linear(d_model, d_out)
     
     def forward(self, G_memory, tgt_input, tgt_mask=None):
         """
-        G_memory: 来自 A2GTransformer 的输出, shape: [src_seq_len, batch_size, d_model]
-        tgt_input: decoder 的输入 (token IDs), shape: [tgt_seq_len, batch_size]
-        tgt_mask:  (可选) 用来做 causal mask, [tgt_seq_len, tgt_seq_len]
+        G_memory: output from A2GTransformer, shape: [src_seq_len, batch_size, d_model]
+        tgt_input: decoder's input (token IDs), shape: [tgt_seq_len, batch_size]
+        tgt_mask:  (optional) causal mask, shape: [tgt_seq_len, tgt_seq_len]
         
         return: logits, [tgt_seq_len, batch_size, vocab_size]
         """
-        # (1) 目标序列 embedding
+        # (1) target sequence embedding
         tgt_emb = self.decoder_input_proj(tgt_input)  # [tgt_seq_len, batch_size, d_model]
         
-        # (2) Decoder 前向
+        # (2) Decoder forward pass
         #     memory=G_memory, tgt=tgt_emb
         out = self.decoder(tgt=tgt_emb, memory=G_memory, tgt_mask=tgt_mask)
         
-        # (3) 映射到 out_dim
+        # (3) map to vocab_size
         y_pred = self.fc_out(out)
         return y_pred
 
-# 3) 整体 A->G->out seq2seq
+# 3) A->G->out seq2seq
 class A2G2OutSeq2Seq(nn.Module):
     def __init__(self, 
                  model_type=None,
@@ -93,8 +93,8 @@ class A2G2OutSeq2Seq(nn.Module):
     def forward(self, A, tgt_input, tgt_mask=None):
         """
         A:         [src_seq_len, batch_size, d_in]
-        tgt_input: [tgt_seq_len, batch_size] (目标序列 ID)
-        tgt_mask:  (可选) [tgt_seq_len, tgt_seq_len], 用于因果mask
+        tgt_input: [tgt_seq_len, batch_size] (target seq ID)
+        tgt_mask:  (optional) [tgt_seq_len, tgt_seq_len], causal mask
         
         return: logits => [tgt_seq_len, batch_size, tgt_vocab_size]
         """
@@ -109,7 +109,7 @@ class A2G2OutSeq2Seq(nn.Module):
     def generate(self, A, max_len=10, d_out=5):
         """
         A: [src_seq_len, batch_size, d_in]
-        max_len: 生成序列的最大长度
+        max_len: maximum length of target sequence to be generated
         
         return: y_pred => [tgt_seq_len, batch_size]
         """

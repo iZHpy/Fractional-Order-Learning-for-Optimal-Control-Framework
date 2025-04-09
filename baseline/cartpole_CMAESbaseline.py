@@ -102,7 +102,7 @@ def simulate_mpc(initial_state, Q, R, horizon, sim_time, params, dt, u_bounds=(-
         trajectory.append(state)
     return np.array(trajectory), np.array(controls)
 
-# Load data for trajectories, optimal controls, and cost matrices
+# Load data
 args = parse_args()
 set_seed(args.seed)
 dir_path = './data/cartpole/'

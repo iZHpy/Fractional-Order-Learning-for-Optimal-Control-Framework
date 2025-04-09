@@ -12,5 +12,4 @@ done
 
 echo "Total commands: ${#commands[@]}"
 
-# 使用 xargs 并行执行命令
 printf "%s\n" "${commands[@]}" | xargs -P 5 -I {} bash -c "{}"

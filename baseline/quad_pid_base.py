@@ -128,17 +128,6 @@ R_matrices = np.load(dir_path+'LQR_R.npy')
 def simulate_pid_quad(initial_state, Kp, Ki, Kd, desired_state, quad_params, dt, total_steps, u_bounds=(-20, 20)):
     """
     Simulate the quadrotor using a PID controller.
-    
-    :param initial_state: 13-dimensional initial state vector.
-    :param Kp: Proportional gain matrix (4x13).
-    :param Ki: Integral gain matrix (4x13).
-    :param Kd: Derivative gain matrix (4x13).
-    :param desired_state: 13-dimensional desired state (e.g. zero state).
-    :param quad_params: Quadrotor parameters.
-    :param dt: Time step.
-    :param total_steps: Number of simulation steps.
-    :param u_bounds: Tuple (min, max) for control saturation.
-    :return: Tuple (trajectory, control_history) with state and control sequences.
     """
     state = initial_state.copy()
     trajectory = [state]
@@ -173,9 +162,6 @@ def simulate_pid_quad(initial_state, Kp, Ki, Kd, desired_state, quad_params, dt,
 
 
 # --- PID Gain Tuning ---
-# Here we define the PID gains as 4x13 matrices.
-# For this example we use uniform gains across all state errors.
-# In practice you may wish to design Kp, Ki, and Kd to focus on the most critical state errors.
 Kp = 0.1 * np.ones((4, 13))
 Ki = 0.01 * np.ones((4, 13))
 Kd = 0.05 * np.ones((4, 13))

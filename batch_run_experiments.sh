@@ -19,5 +19,4 @@ done
 # done
 
 
-# 使用 xargs 并行执行命令
 printf "%s\n" "${commands[@]}" | xargs -P 1 -I {} bash -c "{}"

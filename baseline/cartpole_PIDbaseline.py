@@ -54,9 +54,7 @@ def simulate_pid(initial_state, pid_gains, sim_time, params, dt, desired_state=N
          error_derivative = (error - previous_error) / dt
          previous_error = error
          
-         # Compute the control action using the PID law:
-         # u = Kp*error + Ki*integral(error) + Kd*derivative(error)
-         # Here we use vector gains and combine the four state errors into a single control input.
+         # Compute the control action using the PID law
          u = np.dot(pid_gains['Kp'], error) + np.dot(pid_gains['Ki'], error_integral) + np.dot(pid_gains['Kd'], error_derivative)
          u = np.clip(u, u_bounds[0], u_bounds[1])
          controls.append(u)
@@ -82,8 +80,6 @@ sim_time = 3.2
 u_bounds = (-0.5, 0.5) 
 
 # Define PID gains.
-# These gains represent the proportional, integral, and derivative contributions from each state error.
-# In many cart-pole systems, the pole angle (theta) is critical so it is given a higher weight.
 pid_gains = {
     'Kp': np.array([1.0, 0.0, 15.0, 0.0]),
     'Ki': np.array([0.1, 0.0, 1.0, 0.0]),
@@ -102,7 +98,6 @@ for i in tqdm(test_indice):
     x0 = trajectories[i, 0]
     
     # Simulate using the PID controller.
-    # Here we set the desired state to zero.
     trajectory_est, estimated_controls_est = simulate_pid(x0, pid_gains, sim_time, params, dt, desired_state=np.zeros(4), u_bounds=u_bounds)
     
     # Compare the PID control actions to the pre-computed optimal control (from LQR/MPC)
