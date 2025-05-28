@@ -1,4 +1,4 @@
-# Fractional-Order Learning for Control Framework
+# Fractional-Order Learning for Optimal Control Framework
 
 This project implements a control framework based on fractional-order learning, using deep learning models to predict and optimize control strategies.
 
