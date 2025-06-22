@@ -39,7 +39,6 @@ Thumbs.db
 
 # IDEs and editors #
 ####################
-.vscode/
 .idea/
 *.suo
 *.ntvs*
@@ -70,3 +69,7 @@ venv.bak/
 node_modules/
 npm-debug.log
 yarn-error.log
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
